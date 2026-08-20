@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Subscrub</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <img class="logo" src="../icons/icon48.png" alt="">
+        <div>
+          <h1>subscrub</h1>
+          <p class="tag" id="context">checking page…</p>
+        </div>
+      </div>
+      <label class="switch" title="Enable / disable all filtering">
+        <input type="checkbox" id="master">
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+    </header>
+
+    <section class="card" id="pageCard">
+      <div class="card-head">
+        <h2>Flairs on this page</h2>
+        <span class="pill" id="flairCount">0</span>
+      </div>
+      <div class="list" id="flairList"></div>
+      <p class="empty" id="flairEmpty" hidden></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Add a filter</h2></div>
+      <form id="addForm" autocomplete="off">
+        <input type="text" id="pattern" placeholder="flair text, e.g. lakers" spellcheck="false">
+        <div class="row">
+          <select id="scope" title="Where this filter applies"></select>
+          <select id="match" title="How the flair text is matched">
+            <option value="contains">contains</option>
+            <option value="exact">is exactly</option>
+            <option value="regex">regex</option>
+          </select>
+          <select id="action" title="What to do with matching comments">
+            <option value="collapse">collapse</option>
+            <option value="hide">hide</option>
+          </select>
+          <button type="submit" class="primary">Add</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>My filters</h2>
+        <span class="pill" id="rulesCount">0</span>
+      </div>
+      <div class="list" id="rulesList"></div>
+      <p class="empty" id="rulesEmpty" hidden>No filters yet. Add one above, or block a flair straight from the list of flairs on the page.</p>
+    </section>
+
+    <footer class="foot">
+      <span id="stats">—</span>
+      <span class="spacer"></span>
+      <button class="link" id="backupToggle">Backup</button>
+    </footer>
+
+    <section class="card backup" id="backupCard" hidden>
+      <div class="card-head"><h2>Backup &amp; restore</h2></div>
+      <textarea id="backupText" spellcheck="false" rows="5" placeholder="Filter JSON"></textarea>
+      <div class="row">
+        <button id="backupCopy">Copy current</button>
+        <button id="backupLoad">Replace from JSON</button>
+      </div>
+      <p class="empty" id="backupMsg"></p>
+    </section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
