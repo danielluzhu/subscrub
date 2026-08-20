@@ -41,6 +41,9 @@
   let seenComments = 0;
   let lastBadge = -1;
   let scanTimer = null;
+  let scanDue = 0;
+  let scans = 0;
+  let lastScanAt = 0;
   let lastContextComment = null;
   const flairIndex = new Map(); // key -> { label, values, count }
   const regexCache = new Map();
@@ -425,8 +428,25 @@
     else flairIndex.set(key, { label: flair.label, values: flair.values, count: 1 });
   }
 
+  /* Reddit reuses comment elements as you scroll a long thread, so "already
+     processed" has to mean "processed for THIS comment", not just this node. */
+  function commentId(el) {
+    return el.getAttribute('thingid') || el.getAttribute('data-fullname') ||
+           el.getAttribute('id') || '';
+  }
+
   function processComment(el, kind) {
-    if (el.dataset.subscrubDone === '1') return;
+    const id = commentId(el);
+    if (el.dataset.subscrubDone === '1') {
+      if (el.dataset.subscrubId === id) return;
+      // Same node, different comment: throw away every verdict we made for it.
+      uncensor(el);
+      delete el.dataset.subscrubDone;
+      delete el.dataset.subscrubNoflair;
+      delete el.dataset.subscrubSeen;
+      delete el.dataset.subscrubUser;
+    }
+    el.dataset.subscrubId = id;
     const flair = readFlair(el, kind);
 
     if (!flair) {
@@ -489,6 +509,7 @@
 
   function scan() {
     scanTimer = null;
+    scanDue = 0;
     if (!alive()) return;
     const list = collect(document);
     seenComments = list.length;
@@ -501,14 +522,28 @@
     // Re-check censored comments: replies (and the controls that load them) can
     // arrive after we censored, and they must never stay hidden.
     document.querySelectorAll('[data-subscrub-state]').forEach((el) => {
-      try { censorParts(el, kindOf(el)); } catch (_) { /* keep going */ }
+      try {
+        if (!isTopLevel(el)) uncensor(el);   // reparented under another comment
+        else censorParts(el, kindOf(el));
+      } catch (_) { /* keep going */ }
     });
+    scans++;
+    lastScanAt = Date.now();
     reportBadge();
   }
 
+  /* Earliest request wins. A pending scan must never swallow a sooner one: the
+     flair grace period arms a 1.5s timer on any page that has unflaired
+     comments, and newly loaded comments can't wait behind it. */
   function schedule(delay) {
-    if (scanTimer) return;
-    scanTimer = setTimeout(scan, typeof delay === 'number' ? delay : 120);
+    const wait = typeof delay === 'number' ? delay : 120;
+    const due = Date.now() + wait;
+    if (scanTimer) {
+      if (due >= scanDue) return;   // a scan is already coming sooner
+      clearTimeout(scanTimer);
+    }
+    scanDue = due;
+    scanTimer = setTimeout(scan, wait);
   }
 
   function resetAll() {
@@ -526,6 +561,7 @@
       delete el.dataset.subscrubDone;
       delete el.dataset.subscrubSeen;
       delete el.dataset.subscrubNoflair;
+      delete el.dataset.subscrubId;
     });
     filtered = 0;
     flairIndex.clear();
@@ -581,6 +617,8 @@
       filtered,
       comments: seenComments,
       enabled: state.enabled,
+      scans,
+      msSinceScan: lastScanAt ? Date.now() - lastScanAt : null,
       allowActive
     };
   }
@@ -596,6 +634,9 @@
   }
 
   function debug() {
+    console.log('[subscrub] %d scans, last %ss ago · %d comments seen · %d scrubbed · enabled=%s · %d rule(s)',
+      scans, ((Date.now() - lastScanAt) / 1000).toFixed(1), seenComments, filtered,
+      state.enabled, state.rules.length);
     const rows = [];
     document.querySelectorAll('[data-subscrub-state]').forEach((el) => {
       const kind = kindOf(el);
@@ -722,13 +763,18 @@
     }
   });
 
-  // Reddit is a SPA: watch for navigations so subreddit scope stays correct.
+  /* Reddit is a SPA: watch for navigations so subreddit scope stays correct.
+     The same tick is a backstop for comments that appear without a mutation we
+     acted on — "load more comments", infinite scroll, a recycled viewport. */
   setInterval(() => {
-    if (location.href === lastHref) return;
-    lastHref = location.href;
-    const sub = detectSubreddit();
-    if (sub !== currentSub) { currentSub = sub; resetAll(); }
-    schedule(250);
+    if (location.href !== lastHref) {
+      lastHref = location.href;
+      const sub = detectSubreddit();
+      if (sub !== currentSub) { currentSub = sub; resetAll(); }
+      schedule(250);
+      return;
+    }
+    if (document.querySelectorAll(COMMENT_SEL).length !== seenComments) schedule(0);
   }, 700);
 
   loadState().then(() => {
@@ -736,8 +782,14 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
   });
 
+  function rescan() {
+    resetAll();
+    schedule(0);
+    return 'rescanning';
+  }
+
   window.__SUBSCRUB__ = {
-    scan, resetAll, pageInfo, debug, probe,
+    scan, rescan, resetAll, pageInfo, debug, probe,
     get state() { return state; }
   };
 })();

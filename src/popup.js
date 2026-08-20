@@ -346,6 +346,16 @@ $('allowAction').addEventListener('change', async () => {
   setTimeout(reloadPageInfo, 250);
 });
 
+$('rescan').addEventListener('click', async () => {
+  if (targetTabId == null) return;
+  $('rescan').textContent = 'scanning…';
+  await ask(targetTabId, { type: 'subscrub:rescan' });
+  setTimeout(async () => {
+    await reloadPageInfo();
+    $('rescan').textContent = 'Re-scan';
+  }, 400);
+});
+
 $('backupToggle').addEventListener('click', () => {
   const card = $('backupCard');
   card.hidden = !card.hidden;

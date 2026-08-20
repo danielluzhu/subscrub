@@ -83,6 +83,8 @@ window.chrome = {
   <button id="allowOnly">allowlist: Celtics + Heat</button>
   <button id="keepUnflaired">toggle keep-unflaired</button>
   <button id="lazyLoad">load a late reply</button>
+  <button id="loadMore">load 3 more comments</button>
+  <button id="recycle">recycle a comment element</button>
   <button id="info">log pageInfo</button>
   <span id="out"></span>
 </div>
@@ -303,6 +305,32 @@ document.getElementById('lazyLoad').addEventListener('click', () => {
     '<div slot="commentMeta"><a href="#">late_reply</a><span class="flair-content">Jazz</span></div>' +
     '<div slot="comment"><p>Reply loaded after the parent was scrubbed.</p></div></shreddit-comment>';
 });
+// "load more comments": a batch appended after the initial scan
+let more = 0;
+document.getElementById('loadMore').addEventListener('click', () => {
+  const batch = document.createElement('div');
+  const n = ++more;
+  batch.innerHTML =
+    ['Arsenal', 'Spurs', 'Arsenal'].map((flair, i) => `
+      <shreddit-comment thingid="t1_more${n}${i}" author="loaded_${n}_${i}" depth="0">
+        <div slot="commentMeta"><a href="#">loaded_${n}_${i}</a>
+          <span class="flair-content">${flair}</span></div>
+        <div slot="comment"><p>Batch ${n} comment ${i} — ${flair}.</p></div>
+      </shreddit-comment>`).join('');
+  document.body.appendChild(batch);
+});
+
+// reddit reusing one element for a different comment as you scroll
+document.getElementById('recycle').addEventListener('click', () => {
+  const el = document.querySelector('shreddit-comment[author="gunner_1886"]');
+  el.setAttribute('thingid', 't1_recycled');
+  el.setAttribute('author', 'recycled_into_spurs');
+  const meta = el.querySelector(':scope > [slot="commentMeta"]');
+  meta.innerHTML = '<a href="#">recycled_into_spurs</a><span class="flair-content">Spurs</span>';
+  const body = el.querySelector(':scope > [slot="comment"]');
+  if (body) body.innerHTML = '<p>This element now holds a Spurs comment — must be un-scrubbed.</p>';
+});
+
 document.getElementById('info').addEventListener('click', () => {
   const info = window.__SUBSCRUB__.pageInfo();
   document.getElementById('out').textContent =

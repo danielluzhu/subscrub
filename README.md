@@ -103,8 +103,12 @@ Flair reading is ownership-checked — a candidate flair node counts only if
 wrapper holding the reply subtree can hand back a *reply author's* flair and get
 the parent censored for a flair it never had.
 
-A `MutationObserver` handles infinite scroll and
-*load more comments*; a comment whose flair hasn't rendered yet is retried for a
+A `MutationObserver` handles infinite scroll and *load more comments*, with
+earliest-wins scan scheduling so a newly loaded batch is never left waiting
+behind a longer pending timer, and a 700ms sweep that rescans whenever the
+comment count changes without a mutation we acted on. Comment elements are keyed
+by `thingid`, so an element Reddit recycles for a different comment while you
+scroll is re-judged instead of keeping the previous verdict; a comment whose flair hasn't rendered yet is retried for a
 few passes before being written off as flairless. Removing a filter fully undoes
 everything — no reload needed.
 
@@ -150,6 +154,9 @@ window.__SUBSCRUB__.debug()
 One row per censored comment: the flair it read, why it was censored, what it hid,
 what it spared, and how many replies inside it are still visible (`visible/total` —
 those two numbers should always be equal).
+
+`window.__SUBSCRUB__.rescan()` re-runs filtering from scratch on the page (the
+popup's **Re-scan** link does the same thing).
 
 When a flair *isn't* being caught, ask what Subscrub sees for it:
 
