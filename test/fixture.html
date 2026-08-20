@@ -79,6 +79,7 @@ window.chrome = {
   <strong>fixture</strong>
   <button id="addWarriors">add filter: warriors (all subs)</button>
   <button id="clear">clear filters</button>
+  <button id="blockArsenal">block: arsenal</button>
   <button id="allowOnly">allowlist: Celtics + Heat</button>
   <button id="keepUnflaired">toggle keep-unflaired</button>
   <button id="lazyLoad">load a late reply</button>
@@ -217,6 +218,53 @@ window.chrome = {
     '<p>Reply rendered inside a shadow root — Subscrub must not hide its host.</p></div>';
 })();
 </script>
+
+<h2>r/soccer shapes — crest flairs, late flair, replies</h2>
+
+<!-- Emoji/crest flair: an image with alt text, no "flair" in any attribute -->
+<shreddit-comment thingid="t1_30" author="gunner_1886" depth="0">
+  <div slot="commentMeta"><a href="#">gunner_1886</a>
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=":Arsenal:"><span>· 2h</span></div>
+  <div slot="comment" id="t1_30-comment-rtjson-content"><p>Crest-only Arsenal flair — must scrub once "arsenal" is filtered.</p></div>
+  <!-- reply with a filtered flair: must NOT be scrubbed, it is not a parent comment -->
+  <shreddit-comment thingid="t1_31" author="reply_gunner" depth="1">
+    <div slot="commentMeta"><a href="#">reply_gunner</a>
+      <span class="flair-content">Arsenal</span></div>
+    <div slot="comment" id="t1_31-comment-rtjson-content"><p>Reply with an Arsenal flair — replies are never scrubbed.</p></div>
+  </shreddit-comment>
+</shreddit-comment>
+
+<!-- Avatar image in the meta row must not be mistaken for flair -->
+<shreddit-comment thingid="t1_32" author="avatar_only" depth="0">
+  <div slot="commentMeta"><a href="/user/avatar_only"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="u/avatar_only avatar"></a>
+    <a href="#">avatar_only</a><span>· 1h</span></div>
+  <div slot="comment" id="t1_32-comment-rtjson-content"><p>No flair, just an avatar — Subscrub must read this as unflaired.</p></div>
+</shreddit-comment>
+
+<!-- Flair that renders long after the grace period -->
+<shreddit-comment thingid="t1_33" author="slow_flair" depth="0">
+  <div slot="commentMeta"><a href="#">slow_flair</a><span>· 4h</span></div>
+  <div slot="comment" id="t1_33-comment-rtjson-content"><p>Flair arrives 3s late — must still get scrubbed.</p></div>
+</shreddit-comment>
+
+<!-- Old reddit: reply carrying a filtered flair stays untouched -->
+<div class="thing id-t1_34 comment noncollapsed">
+  <div class="entry">
+    <p class="tagline"><a class="author" href="#">spurs_top</a>
+      <span class="flair flair-spurs" title="Spurs">Spurs</span></p>
+    <form class="usertext"><div class="md"><p>Old reddit top-level, Spurs flair.</p></div></form>
+  </div>
+  <div class="child">
+    <div class="thing id-t1_35 comment noncollapsed">
+      <div class="entry">
+        <p class="tagline"><a class="author" href="#">arsenal_reply</a>
+          <span class="flair flair-arsenal" title="Arsenal">Arsenal</span></p>
+        <form class="usertext"><div class="md"><p>Old reddit reply with a filtered flair — stays untouched.</p></div></form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="/src/content.js"></script>
 <script>
 document.getElementById('addWarriors').addEventListener('click', () => {
@@ -226,6 +274,19 @@ document.getElementById('addWarriors').addEventListener('click', () => {
   chrome.storage.sync.set({ rules });
 });
 document.getElementById('clear').addEventListener('click', () => chrome.storage.sync.set({ rules: [] }));
+document.getElementById('blockArsenal').addEventListener('click', () => {
+  chrome.storage.sync.set({ rules: [
+    { id: 'ars', kind: 'block', pattern: 'arsenal', match: 'contains', subreddit: '*', action: 'collapse', enabled: true }
+  ] });
+});
+// flair that reddit renders well after the comment itself
+setTimeout(() => {
+  const meta = document.querySelector('shreddit-comment[author="slow_flair"] [slot="commentMeta"]');
+  const f = document.createElement('span');
+  f.className = 'flair-content';
+  f.textContent = 'Arsenal';
+  if (meta) meta.appendChild(f);
+}, 3000);
 document.getElementById('allowOnly').addEventListener('click', () => {
   chrome.storage.sync.set({ rules: [
     { id: 'w1', kind: 'allow', pattern: 'Celtics', match: 'contains', subreddit: '*', enabled: true },

@@ -19,6 +19,9 @@
      genuinely unflaired. Matters for the allowlist, which has to decide about
      comments that never show a flair at all. */
   const FLAIR_GRACE_MS = 1500;
+  /* How long after first sight to keep re-reading a comment that looked
+     unflaired, in case reddit renders its flair late. */
+  const RECHECK_WINDOW_MS = 30000;
   const COMMENT_SEL = 'shreddit-comment, div.thing.comment';
   const FLAIR_QUERY = [
     '[class*="flair" i]',
@@ -136,6 +139,9 @@
       });
     }
     if (node.getAttribute) {
+      // The flair node can BE the image (r/soccer crests, emoji-only flair),
+      // not just contain one — read its own alt, not only its descendants'.
+      push(node.getAttribute('alt'));
       push(node.getAttribute('title'));
       push(node.getAttribute('aria-label'));
     }
@@ -147,6 +153,16 @@
      gets censored for a flair it never had. */
   function owns(el, node, kind) {
     return node.closest(kind === 'old' ? 'div.thing.comment' : 'shreddit-comment') === el;
+  }
+
+  /* Replies are never censored — only top-level comments are. Handles both a
+     nested comment tree and a flat one where depth is an attribute. */
+  function isTopLevel(el) {
+    const parent = el.parentElement && el.parentElement.closest(COMMENT_SEL);
+    if (parent) return false;
+    const depth = el.getAttribute && el.getAttribute('depth');
+    if (depth !== null && depth !== undefined && depth !== '' && Number(depth) > 0) return false;
+    return true;
   }
 
   function authorOf(el, kind) {
@@ -189,7 +205,26 @@
       if (scope.matches && scope.matches(FLAIR_QUERY)) consider(scope);
       if (scope.querySelectorAll) scope.querySelectorAll(FLAIR_QUERY).forEach(consider);
     }
+
+    /* Nothing named "flair"? Subs like r/soccer show the flair as a bare crest
+       image in the meta row, so fall back to its alt text (":Arsenal:"). */
+    if (!out.length) {
+      for (const scope of scopes) {
+        if (!scope.querySelectorAll) continue;
+        scope.querySelectorAll('img[alt]').forEach((img) => {
+          if (!norm(img.getAttribute('alt'))) return;
+          if (isAvatarish(img)) return;
+          consider(img);
+        });
+      }
+    }
     return out;
+  }
+
+  function isAvatarish(img) {
+    const alt = (img.getAttribute('alt') || '').toLowerCase();
+    if (/avatar|profile|snoo|user icon/.test(alt)) return true;
+    return !!img.closest('[slot="commentAvatar"], [class*="avatar" i], a[href*="/user/"]');
   }
 
   /** @returns {{label:string, values:string[], author:string}|null} */
@@ -403,7 +438,8 @@
         return;
       }
       el.dataset.subscrubDone = '1';
-      if (!state.enabled) return;
+      el.dataset.subscrubNoflair = '1'; // keep looking: flair can render late
+      if (!state.enabled || !isTopLevel(el)) return;
       const verdict = decide(null);
       if (verdict) applyDecision(el, kind, verdict, null);
       return;
@@ -412,6 +448,41 @@
     el.dataset.subscrubDone = '1';
     indexFlair(flair);
     if (!state.enabled) return;
+    if (!isTopLevel(el)) return;   // replies are left alone whatever their flair
+    const verdict = decide(flair.values);
+    if (verdict) applyDecision(el, kind, verdict, flair);
+  }
+
+  /* Undo a censoring decision (used when a late flair changes the verdict). */
+  function uncensor(el) {
+    if (!el.dataset.subscrubState) return;
+    const stub = el.querySelector(':scope > .subscrub-stub');
+    if (stub) stub.remove();
+    for (const child of el.children) {
+      if (child.dataset) delete child.dataset.subscrubPart;
+    }
+    delete el.dataset.subscrubState;
+    delete el.dataset.subscrubReason;
+    delete el.dataset.subscrubFlair;
+    delete el.dataset.subscrubRule;
+    if (filtered > 0) filtered--;
+  }
+
+  /* A comment we read as unflaired may just have been slow. Reddit lazy-loads
+     flair, so keep re-reading these for a while instead of writing them off. */
+  function recheckUnflaired(el) {
+    const seen = Number(el.dataset.subscrubSeen || 0);
+    if (seen && Date.now() - seen > RECHECK_WINDOW_MS) {
+      delete el.dataset.subscrubNoflair;
+      return;
+    }
+    const kind = kindOf(el);
+    const flair = readFlair(el, kind);
+    if (!flair) return;
+    delete el.dataset.subscrubNoflair;
+    indexFlair(flair);
+    uncensor(el);
+    if (!state.enabled || !isTopLevel(el)) return;
     const verdict = decide(flair.values);
     if (verdict) applyDecision(el, kind, verdict, flair);
   }
@@ -424,6 +495,9 @@
     for (const el of list) {
       try { processComment(el, kindOf(el)); } catch (_) { /* keep scanning */ }
     }
+    document.querySelectorAll('[data-subscrub-noflair]').forEach((el) => {
+      try { recheckUnflaired(el); } catch (_) { /* keep going */ }
+    });
     // Re-check censored comments: replies (and the controls that load them) can
     // arrive after we censored, and they must never stay hidden.
     document.querySelectorAll('[data-subscrub-state]').forEach((el) => {
@@ -451,6 +525,7 @@
     document.querySelectorAll('[data-subscrub-done], [data-subscrub-seen]').forEach((el) => {
       delete el.dataset.subscrubDone;
       delete el.dataset.subscrubSeen;
+      delete el.dataset.subscrubNoflair;
     });
     filtered = 0;
     flairIndex.clear();
@@ -531,6 +606,7 @@
         flair: el.dataset.subscrubFlair,
         state: el.dataset.subscrubState,
         reason: el.dataset.subscrubReason || 'block',
+        topLevel: isTopLevel(el),
         kind,
         hidden: children.filter((c) => c.dataset && c.dataset.subscrubPart === 'hidden').map(describe),
         spared: children.filter((c) => !c.dataset || c.dataset.subscrubPart !== 'hidden').map(describe),
@@ -545,6 +621,60 @@
       replies: r.repliesVisible + '/' + r.repliesInside
     })));
     return rows;
+  }
+
+  /* Diagnostic: find comments whose header mentions a term and report what
+     Subscrub actually read from them. window.__SUBSCRUB__.probe('arsenal') */
+  function probe(term, limit) {
+    const needle = String(term || '').toLowerCase();
+    const max = limit || 12;
+    const rows = [];
+    let matched = 0;
+
+    for (const el of collect(document)) {
+      const kind = kindOf(el);
+      const header = kind === 'old'
+        ? el.querySelector(':scope > .entry .tagline')
+        : el.querySelector(':scope > [slot="commentMeta"]');
+      const scope = header || el;
+      // innerHTML covers visible text, img alt text and class names at once.
+      const hay = (header ? header.innerHTML : ownHtml(el)).toLowerCase();
+      if (needle && !hay.includes(needle)) continue;
+      matched++;
+      if (rows.length >= max) continue;
+
+      const flair = readFlair(el, kind);
+      const verdict = flair ? decide(flair.values) : decide(null);
+      rows.push({
+        author: authorOf(el, kind) || '?',
+        topLevel: isTopLevel(el),
+        flairRead: flair ? flair.label : '(none found)',
+        values: flair ? flair.values.join(' | ') : '',
+        wouldCensor: !isTopLevel(el) ? 'no — reply' : (verdict ? verdict.reason : 'no — kept'),
+        state: el.dataset.subscrubState || '-',
+        usedMetaSlot: !!header,
+        html: scope.outerHTML.replace(/\s+/g, ' ').slice(0, 500)
+      });
+    }
+
+    console.log('[subscrub] %d comment(s) mention %o; showing %d', matched, term, rows.length);
+    if (rows.length && console.table) {
+      console.table(rows.map((r) => ({
+        author: r.author, topLevel: r.topLevel, flairRead: r.flairRead,
+        values: r.values, wouldCensor: r.wouldCensor, state: r.state
+      })));
+      console.log('markup of the first match:\n' + rows[0].html);
+    }
+    return rows;
+  }
+
+  function ownHtml(el) {
+    let html = '';
+    for (const child of el.children) {
+      if (child.matches(COMMENT_SEL) || child.querySelector(COMMENT_SEL)) continue;
+      html += child.outerHTML || '';
+    }
+    return html;
   }
 
   function blockFromContext() {
@@ -606,5 +736,8 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
   });
 
-  window.__SUBSCRUB__ = { scan, resetAll, pageInfo, debug, get state() { return state; } };
+  window.__SUBSCRUB__ = {
+    scan, resetAll, pageInfo, debug, probe,
+    get state() { return state; }
+  };
 })();

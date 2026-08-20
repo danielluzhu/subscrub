@@ -11,16 +11,16 @@ you can click open if you're curious.
 - **Collapse or hide** comments whose author flair matches one of your filters.
   Collapse is the default — the comment folds into a small
   `+ u/name · Lakers · scrubbed — show` bar. Click it to read it anyway.
-- **Replies are never touched.** Only the flaired comment itself is censored;
-  the thread hanging off it stays fully readable at its normal indent. A reply
-  is only collapsed if its *own* author flair matches a filter.
+- **Only top-level comments are ever scrubbed.** Replies are left alone whatever
+  flair their author has, and a scrubbed parent keeps its reply thread fully
+  readable at its normal indent.
 - **Allowlist mode — "show only these flairs."** The inverse of blocking: name the
   flairs you want to see and everything else in that scope gets scrubbed. Add
   `Celtics` in r/nba and only Celtics-flaired comments stay open there. Comments
   with no flair at all are scrubbed too, since they aren't on the list — untick
   that with **Keep comments with no flair** if a sub is mostly unflaired.
   Blocklist beats allowlist: a blocked flair stays scrubbed even if the allowlist
-  names it.
+  names it. Like blocking, it only ever touches top-level comments.
 - **Three ways to add a flair**, so you never have to type one exactly:
   1. Open the popup — it lists **every flair on the page** with counts. The
      Block / Show-only switch decides which list a click adds to.
@@ -32,7 +32,8 @@ you can click open if you're curious.
 - Works on **old.reddit.com** and **new Reddit** (`shreddit`), including comments
   loaded lazily as you scroll or click *load more*.
 - Matches flair **text, image alt text, and old-reddit `flair-*` CSS classes**, so
-  emoji-only flairs still get caught.
+  crest and emoji flairs (r/soccer, r/nba) are caught as well as plain text ones —
+  including when the flair *is* the image rather than containing one.
 - Toolbar badge shows how many comments were scrubbed on the current tab.
 - Master on/off switch, per-filter enable/disable, and JSON backup/restore.
 
@@ -89,10 +90,13 @@ guess, and every scan re-checks censored comments so replies that load later
 un-hide their container. (Reddit's own collapse isn't used: it takes the reply
 tree with it.)
 
-A comment is judged once: a matching block rule censors it; otherwise, if an
-allowlist covers this page and nothing on it matches, it is censored as
-not-allowed. Unflaired comments only get that verdict after a 1.5s grace period,
-so a slow-rendering flair isn't mistaken for no flair.
+Only top-level comments are judged — a comment with a comment ancestor, or a
+non-zero `depth` attribute in a flat tree, is skipped outright. For the rest: a
+matching block rule censors the comment; otherwise, if an allowlist covers this
+page and nothing on it matches, it is censored as not-allowed. Unflaired comments
+only get that verdict after a 1.5s grace period, and a comment that looked
+unflaired keeps being re-read for 30s afterwards — Reddit renders flair lazily,
+and a late flair both censors and *un*-censors as the verdict changes.
 
 Flair reading is ownership-checked — a candidate flair node counts only if
 `node.closest(commentSelector)` is the comment being examined. Without that, a
@@ -143,9 +147,20 @@ If a page ever looks wrong, run this in the console on that page:
 window.__SUBSCRUB__.debug()
 ```
 
-It prints one row per censored comment: the flair it read, what it hid, what it
-spared, and how many replies inside it are still visible (`visible/total` — those
-two numbers should always be equal).
+One row per censored comment: the flair it read, why it was censored, what it hid,
+what it spared, and how many replies inside it are still visible (`visible/total` —
+those two numbers should always be equal).
+
+When a flair *isn't* being caught, ask what Subscrub sees for it:
+
+```js
+window.__SUBSCRUB__.probe('arsenal')
+```
+
+That finds every comment whose header mentions the term and prints the flair text
+it managed to read, whether the comment is top-level, and what the filters would do
+about it — plus the raw markup of the first match, which is what to send along if
+the flair is being read as `(none found)`.
 
 ## Publishing
 
