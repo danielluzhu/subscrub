@@ -26,6 +26,10 @@
         <h2>Flairs on this page</h2>
         <span class="pill" id="flairCount">0</span>
       </div>
+      <div class="seg" id="flairMode" role="group" aria-label="What a flair button does">
+        <button type="button" class="on" data-mode="block">Block these</button>
+        <button type="button" data-mode="allow">Show only these</button>
+      </div>
       <div class="list" id="flairList"></div>
       <p class="empty" id="flairEmpty" hidden></p>
     </section>
@@ -35,6 +39,10 @@
       <form id="addForm" autocomplete="off">
         <input type="text" id="pattern" placeholder="flair text, e.g. lakers" spellcheck="false">
         <div class="row">
+          <select id="type" title="Block this flair, or show only this flair">
+            <option value="block">block</option>
+            <option value="allow">show only</option>
+          </select>
           <select id="scope" title="Where this filter applies"></select>
           <select id="match" title="How the flair text is matched">
             <option value="contains">contains</option>
@@ -52,11 +60,34 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>My filters</h2>
+        <h2>Blocked flairs</h2>
         <span class="pill" id="rulesCount">0</span>
       </div>
       <div class="list" id="rulesList"></div>
-      <p class="empty" id="rulesEmpty" hidden>No filters yet. Add one above, or block a flair straight from the list of flairs on the page.</p>
+      <p class="empty" id="rulesEmpty" hidden>No blocked flairs yet. Add one above, or block a flair straight from the list of flairs on the page.</p>
+    </section>
+
+    <section class="card" id="allowCard">
+      <div class="card-head">
+        <h2>Show only these flairs</h2>
+        <span class="pill" id="allowCount">0</span>
+      </div>
+      <div class="list" id="allowList"></div>
+      <p class="empty" id="allowEmpty" hidden>Nothing here, so every flair is shown. Add a flair and only that flair stays visible in its scope — everything else gets scrubbed.</p>
+      <div class="opts" id="allowOpts">
+        <label class="opt" title="Most redditors have no flair at all">
+          <input type="checkbox" id="keepUnflaired">
+          Keep comments with no flair
+        </label>
+        <label class="opt">
+          Everything else:
+          <select id="allowAction" class="act">
+            <option value="collapse">collapse</option>
+            <option value="hide">hide</option>
+          </select>
+        </label>
+      </div>
+      <p class="note" id="allowStatus" hidden></p>
     </section>
 
     <footer class="foot">

@@ -16,7 +16,7 @@ Subscrub — filter Reddit comments by flair
 **Short description** (required, ≤132 chars)
 
 ```
-Collapse Reddit comments by the commenter's user flair. Block a flair in one click; replies stay readable.
+Collapse Reddit comments by commenter flair. Block the flairs you hate or show only the ones you want; replies stay readable.
 ```
 
 **Detailed description** (required)
@@ -33,8 +33,14 @@ Replies to a filtered comment stay fully visible at their normal indent. A reply
 only collapsed if its own author flair matches one of your filters, so you never
 lose a conversation because one person in it has a flair you filtered.
 
+OR FLIP IT AROUND
+Allowlist mode does the inverse: name the flairs you want to see and everything
+else gets scrubbed. "Show only Celtics in r/nba" leaves one team's comments open
+and folds the rest. Per-subreddit or global, same as blocking.
+
 THREE WAYS TO ADD A FLAIR
-• Open the popup — it lists every flair on the page with counts. Click "Block here".
+• Open the popup — it lists every flair on the page with counts, with one switch
+  for whether a click blocks that flair or makes it the only one you see.
 • Right-click any comment → "Subscrub: filter this commenter's flair".
 • Type it yourself, with contains / exact / regex matching.
 
@@ -86,7 +92,8 @@ To get exactly 1280×800: open Chrome DevTools → device toolbar → set a cust
 
 ```
 Subscrub has one purpose: to filter Reddit comment threads by the commenter's user
-flair, collapsing or hiding comments whose flair the user has chosen to filter.
+flair — collapsing or hiding comments whose flair the user has chosen to filter, or
+inversely, showing only the flairs the user has allowed.
 ```
 
 **Permission justifications**

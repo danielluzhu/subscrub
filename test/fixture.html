@@ -18,6 +18,8 @@ window.chrome = {
   storage: {
     _data: {
       enabled: true,
+      allowAction: 'collapse',
+      allowKeepUnflaired: false,
       rules: [
         { id: 'a', pattern: 'lakers', match: 'contains', subreddit: 'nba', action: 'collapse', enabled: true },
         { id: 'b', pattern: 'Knicks', match: 'contains', subreddit: '*', action: 'collapse', enabled: true },
@@ -77,6 +79,8 @@ window.chrome = {
   <strong>fixture</strong>
   <button id="addWarriors">add filter: warriors (all subs)</button>
   <button id="clear">clear filters</button>
+  <button id="allowOnly">allowlist: Celtics + Heat</button>
+  <button id="keepUnflaired">toggle keep-unflaired</button>
   <button id="lazyLoad">load a late reply</button>
   <button id="info">log pageInfo</button>
   <span id="out"></span>
@@ -222,6 +226,15 @@ document.getElementById('addWarriors').addEventListener('click', () => {
   chrome.storage.sync.set({ rules });
 });
 document.getElementById('clear').addEventListener('click', () => chrome.storage.sync.set({ rules: [] }));
+document.getElementById('allowOnly').addEventListener('click', () => {
+  chrome.storage.sync.set({ rules: [
+    { id: 'w1', kind: 'allow', pattern: 'Celtics', match: 'contains', subreddit: '*', enabled: true },
+    { id: 'w2', kind: 'allow', pattern: 'Heat', match: 'contains', subreddit: 'nba', enabled: true }
+  ] });
+});
+document.getElementById('keepUnflaired').addEventListener('click', () => {
+  chrome.storage.sync.set({ allowKeepUnflaired: !chrome.storage._data.allowKeepUnflaired });
+});
 // replies that arrive after the parent was censored must un-hide their container
 document.getElementById('lazyLoad').addEventListener('click', () => {
   document.getElementById('lazyReplies').innerHTML =

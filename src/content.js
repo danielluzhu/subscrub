@@ -15,9 +15,10 @@
   if (window.__SUBSCRUB_LOADED__) return;
   window.__SUBSCRUB_LOADED__ = true;
 
-  /* How many scan passes to wait for a lazily-rendered flair before deciding
-     a comment genuinely has none. */
-  const MAX_FLAIR_ATTEMPTS = 10;
+  /* How long to wait for a lazily-rendered flair before treating a comment as
+     genuinely unflaired. Matters for the allowlist, which has to decide about
+     comments that never show a flair at all. */
+  const FLAIR_GRACE_MS = 1500;
   const COMMENT_SEL = 'shreddit-comment, div.thing.comment';
   const FLAIR_QUERY = [
     '[class*="flair" i]',
@@ -30,7 +31,7 @@
      commenter's own flair. */
   const SKIP_SLOTS = new Set(['comment', 'actionRow', 'children', 'commentAvatar']);
 
-  let state = { enabled: true, rules: [] };
+  let state = { enabled: true, rules: [], allowAction: 'collapse', allowKeepUnflaired: false };
   let currentSub = detectSubreddit();
   let lastHref = location.href;
   let filtered = 0;
@@ -64,13 +65,17 @@
   function loadState() {
     return new Promise((resolve) => {
       try {
-        chrome.storage.sync.get({ enabled: true, rules: [] }, (data) => {
-          state = {
-            enabled: data && data.enabled !== false,
-            rules: (data && Array.isArray(data.rules)) ? data.rules : []
-          };
-          resolve();
-        });
+        chrome.storage.sync.get(
+          { enabled: true, rules: [], allowAction: 'collapse', allowKeepUnflaired: false },
+          (data) => {
+            state = {
+              enabled: data && data.enabled !== false,
+              rules: (data && Array.isArray(data.rules)) ? data.rules : [],
+              allowAction: (data && data.allowAction === 'hide') ? 'hide' : 'collapse',
+              allowKeepUnflaired: !!(data && data.allowKeepUnflaired)
+            };
+            resolve();
+          });
       } catch (_) { resolve(); }
     });
   }
@@ -89,6 +94,7 @@
       }
       rules.push({
         id: uid(),
+        kind: 'block',
         pattern: clean,
         match: 'contains',
         subreddit: scope,
@@ -141,6 +147,12 @@
      gets censored for a flair it never had. */
   function owns(el, node, kind) {
     return node.closest(kind === 'old' ? 'div.thing.comment' : 'shreddit-comment') === el;
+  }
+
+  function authorOf(el, kind) {
+    return kind === 'old'
+      ? norm((el.querySelector(':scope > .entry .tagline a.author') || {}).textContent)
+      : norm(el.getAttribute('author'));
   }
 
   function oldFlairNodes(el) {
@@ -199,9 +211,7 @@
     }
     if (!texts.length && !keys.length) return null;
 
-    const author = kind === 'old'
-      ? norm((el.querySelector(':scope > .entry .tagline a.author') || {}).textContent)
-      : norm(el.getAttribute('author'));
+    const author = authorOf(el, kind);
 
     return {
       label: texts[0] || ':' + keys[0],
@@ -229,16 +239,51 @@
     return values.some((v) => v.includes(needle));
   }
 
-  function matchRule(values) {
+  function scopeMatches(rule) {
+    const scope = rule.subreddit || '*';
+    if (scope === '*') return true;
+    return !!currentSub && scope.toLowerCase() === currentSub.toLowerCase();
+  }
+
+  function matchRule(values, kind) {
+    const want = kind || 'block';
+    if (!values) return null;
     for (const rule of state.rules) {
       if (rule.enabled === false) continue;
-      const scope = rule.subreddit || '*';
-      if (scope !== '*') {
-        if (!currentSub || scope.toLowerCase() !== currentSub.toLowerCase()) continue;
-      }
+      if ((rule.kind || 'block') !== want) continue;
+      if (!scopeMatches(rule)) continue;
       if (valuesMatch(rule, values)) return rule;
     }
     return null;
+  }
+
+  /* Is an allowlist in force for this page? One enabled allow rule whose scope
+     covers where we are is enough. */
+  function allowlistActive() {
+    return state.rules.some((r) =>
+      (r.kind || 'block') === 'allow' && r.enabled !== false && scopeMatches(r));
+  }
+
+  /* What should happen to a comment with these flair values (null = no flair)?
+     Blocklist wins over allowlist, so a blocked flair stays blocked even if the
+     allowlist names it. Returns null to leave the comment alone. */
+  function decide(values) {
+    const blocked = matchRule(values, 'block');
+    if (blocked) {
+      return {
+        reason: 'block',
+        action: blocked.action === 'hide' ? 'hide' : 'collapse',
+        rule: blocked
+      };
+    }
+    if (!allowlistActive()) return null;
+    if (matchRule(values, 'allow')) return null;
+    if (!values && state.allowKeepUnflaired) return null;
+    return {
+      reason: 'allow',
+      action: state.allowAction === 'hide' ? 'hide' : 'collapse',
+      rule: null
+    };
   }
 
   /* ---------------------------------------------------------------- censoring
@@ -277,19 +322,24 @@
     }
   }
 
-  function applyRule(el, kind, rule, flair) {
+  function applyDecision(el, kind, decision, flair) {
     if (el.dataset.subscrubUser === 'expanded') return;
     filtered++;
-    el.dataset.subscrubFlair = flair.label;
-    el.dataset.subscrubRule = rule.id || '';
-    el.dataset.subscrubState = rule.action === 'hide' ? 'hidden' : 'collapsed';
-    if (rule.action !== 'hide' && !el.querySelector(':scope > .subscrub-stub')) {
-      el.insertBefore(buildStub(el, flair), el.firstChild);
+    el.dataset.subscrubFlair = flair ? flair.label : '(no flair)';
+    el.dataset.subscrubReason = decision.reason;
+    el.dataset.subscrubRule = decision.rule ? (decision.rule.id || '') : '';
+    el.dataset.subscrubState = decision.action === 'hide' ? 'hidden' : 'collapsed';
+    if (decision.action !== 'hide' && !el.querySelector(':scope > .subscrub-stub')) {
+      el.insertBefore(buildStub(el, kind, flair, decision), el.firstChild);
     }
     censorParts(el, kind);
   }
 
-  function buildStub(el, flair) {
+  function buildStub(el, kind, flair, decision) {
+    const byAllowlist = decision.reason === 'allow';
+    const shownFlair = flair ? flair.label : 'no flair';
+    const author = flair ? flair.author : authorOf(el, kind);
+    const hintText = byAllowlist ? 'not on your allowlist — show' : 'scrubbed — show';
     const stub = document.createElement('div');
     stub.className = 'subscrub-stub';
     stub.setAttribute('role', 'button');
@@ -301,25 +351,27 @@
 
     const who = document.createElement('span');
     who.className = 'subscrub-who';
-    who.textContent = flair.author ? 'u/' + flair.author : 'comment';
+    who.textContent = author ? 'u/' + author : 'comment';
 
     const chip = document.createElement('span');
-    chip.className = 'subscrub-chip';
-    chip.textContent = flair.label;
+    chip.className = 'subscrub-chip' + (flair ? '' : ' subscrub-chip-empty');
+    chip.textContent = shownFlair;
 
     const hint = document.createElement('span');
     hint.className = 'subscrub-hint';
-    hint.textContent = 'scrubbed — show';
+    hint.textContent = hintText;
 
     stub.append(caret, who, chip, hint);
-    stub.title = 'Filtered by Subscrub · flair: ' + flair.label;
+    stub.title = byAllowlist
+      ? 'Hidden by your Subscrub allowlist · flair: ' + shownFlair
+      : 'Filtered by Subscrub · flair: ' + shownFlair;
 
     const toggle = () => {
       const collapsed = el.dataset.subscrubState === 'collapsed';
       el.dataset.subscrubState = collapsed ? 'expanded' : 'collapsed';
       if (collapsed) el.dataset.subscrubUser = 'expanded';
       caret.textContent = collapsed ? '−' : '+';
-      hint.textContent = collapsed ? 'hide' : 'scrubbed — show';
+      hint.textContent = collapsed ? 'hide' : hintText;
       censorParts(el, kindOf(el));
     };
     stub.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggle(); });
@@ -341,17 +393,27 @@
   function processComment(el, kind) {
     if (el.dataset.subscrubDone === '1') return;
     const flair = readFlair(el, kind);
+
     if (!flair) {
-      const tries = (parseInt(el.dataset.subscrubTries || '0', 10) || 0) + 1;
-      el.dataset.subscrubTries = String(tries);
-      if (tries >= MAX_FLAIR_ATTEMPTS) el.dataset.subscrubDone = '1';
+      // Flair may still be rendering. Wait out the grace period before calling
+      // this comment unflaired — under an allowlist that verdict censors it.
+      if (!el.dataset.subscrubSeen) el.dataset.subscrubSeen = String(Date.now());
+      if (Date.now() - Number(el.dataset.subscrubSeen) < FLAIR_GRACE_MS) {
+        schedule(FLAIR_GRACE_MS); // come back once it has settled
+        return;
+      }
+      el.dataset.subscrubDone = '1';
+      if (!state.enabled) return;
+      const verdict = decide(null);
+      if (verdict) applyDecision(el, kind, verdict, null);
       return;
     }
+
     el.dataset.subscrubDone = '1';
     indexFlair(flair);
     if (!state.enabled) return;
-    const rule = matchRule(flair.values);
-    if (rule) applyRule(el, kind, rule, flair);
+    const verdict = decide(flair.values);
+    if (verdict) applyDecision(el, kind, verdict, flair);
   }
 
   function scan() {
@@ -384,10 +446,11 @@
       delete el.dataset.subscrubState;
       delete el.dataset.subscrubFlair;
       delete el.dataset.subscrubRule;
+      delete el.dataset.subscrubReason;
     });
-    document.querySelectorAll('[data-subscrub-done], [data-subscrub-tries]').forEach((el) => {
+    document.querySelectorAll('[data-subscrub-done], [data-subscrub-seen]').forEach((el) => {
       delete el.dataset.subscrubDone;
-      delete el.dataset.subscrubTries;
+      delete el.dataset.subscrubSeen;
     });
     filtered = 0;
     flairIndex.clear();
@@ -420,8 +483,19 @@
   /* --------------------------------------------------------------- messaging */
 
   function pageInfo() {
+    const allowActive = allowlistActive();
     const flairs = Array.from(flairIndex.values())
-      .map((f) => ({ label: f.label, count: f.count, blocked: !!matchRule(f.values) }))
+      .map((f) => {
+        const blocked = !!matchRule(f.values, 'block');
+        const allowed = !!matchRule(f.values, 'allow');
+        return {
+          label: f.label,
+          count: f.count,
+          blocked,
+          allowed,
+          hiddenByAllowlist: allowActive && !blocked && !allowed
+        };
+      })
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
       .slice(0, 80);
     return {
@@ -431,7 +505,8 @@
       flairs,
       filtered,
       comments: seenComments,
-      enabled: state.enabled
+      enabled: state.enabled,
+      allowActive
     };
   }
 
@@ -455,6 +530,7 @@
           norm((el.querySelector(':scope > .entry .tagline a.author') || {}).textContent) || '?',
         flair: el.dataset.subscrubFlair,
         state: el.dataset.subscrubState,
+        reason: el.dataset.subscrubReason || 'block',
         kind,
         hidden: children.filter((c) => c.dataset && c.dataset.subscrubPart === 'hidden').map(describe),
         spared: children.filter((c) => !c.dataset || c.dataset.subscrubPart !== 'hidden').map(describe),
@@ -464,7 +540,7 @@
       });
     });
     if (rows.length && console.table) console.table(rows.map((r) => ({
-      author: r.author, flair: r.flair, state: r.state,
+      author: r.author, flair: r.flair, state: r.state, reason: r.reason,
       hidden: r.hidden.join(' '), spared: r.spared.join(' '),
       replies: r.repliesVisible + '/' + r.repliesInside
     })));
@@ -491,9 +567,12 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
-      if (!changes.rules && !changes.enabled) return;
+      if (!changes.rules && !changes.enabled &&
+          !changes.allowAction && !changes.allowKeepUnflaired) return;
       if (changes.rules) state.rules = Array.isArray(changes.rules.newValue) ? changes.rules.newValue : [];
       if (changes.enabled) state.enabled = changes.enabled.newValue !== false;
+      if (changes.allowAction) state.allowAction = changes.allowAction.newValue === 'hide' ? 'hide' : 'collapse';
+      if (changes.allowKeepUnflaired) state.allowKeepUnflaired = !!changes.allowKeepUnflaired.newValue;
       regexCache.clear();
       resetAll();
       schedule(0);

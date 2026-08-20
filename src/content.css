@@ -69,6 +69,13 @@ shreddit-comment[data-subscrub-state] {
   max-width: 22ch;
 }
 
+.subscrub-chip-empty {
+  background: rgba(128, 128, 128, 0.18);
+  color: inherit;
+  font-style: italic;
+  opacity: 0.8;
+}
+
 .subscrub-hint {
   opacity: 0.65;
   font-size: 11px;

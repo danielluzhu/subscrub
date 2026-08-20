@@ -123,3 +123,54 @@ form .row button { flex: none; }
 
 .item .toggle { flex: none; }
 .item select.act { width: auto; padding: 2px 4px; font-size: 11px; }
+
+/* Segmented control: what the buttons in "Flairs on this page" do. */
+.seg {
+  display: flex;
+  gap: 2px;
+  margin: -2px 0 8px;
+  padding: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.seg button {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.seg button:hover { color: var(--text); }
+.seg button.on {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* Allowlist options + status */
+.opts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.opt {
+  display: flex; align-items: center; gap: 5px;
+  color: var(--muted); font-size: 12px;
+}
+.opt input[type="checkbox"] { margin: 0; }
+.opt select.act { width: auto; padding: 2px 4px; font-size: 11px; }
+
+.note {
+  margin: 8px 2px 0;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.note.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}

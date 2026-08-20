@@ -15,11 +15,13 @@ STUB = """<script>
 /* Fake extension APIs so the popup renders with sample data. */
 window.chrome = {
   storage: {
-    _d: { enabled: true, rules: [
-      {id:'a',pattern:'lakers',match:'contains',subreddit:'nba',action:'collapse',enabled:true},
-      {id:'b',pattern:'Knicks',match:'contains',subreddit:'nba',action:'collapse',enabled:true},
-      {id:'c',pattern:'crypto',match:'contains',subreddit:'*',action:'hide',enabled:false},
-      {id:'d',pattern:'^(GSW|Warriors)$',match:'regex',subreddit:'*',action:'collapse',enabled:true}
+    _d: { enabled: true, allowAction: 'collapse', allowKeepUnflaired: true, rules: [
+      {id:'a',kind:'block',pattern:'lakers',match:'contains',subreddit:'nba',action:'collapse',enabled:true},
+      {id:'b',kind:'block',pattern:'Knicks',match:'contains',subreddit:'nba',action:'collapse',enabled:true},
+      {id:'c',kind:'block',pattern:'crypto',match:'contains',subreddit:'*',action:'hide',enabled:false},
+      {id:'d',kind:'block',pattern:'^(GSW|Warriors)$',match:'regex',subreddit:'*',action:'collapse',enabled:true},
+      {id:'e',kind:'allow',pattern:'Celtics',match:'contains',subreddit:'nba',enabled:true},
+      {id:'f',kind:'allow',pattern:'Mod',match:'exact',subreddit:'*',enabled:true}
     ]},
     sync: {
       get(def, cb) { cb(Object.assign({}, def, chrome.storage._d)); },
@@ -30,11 +32,14 @@ window.chrome = {
   tabs: {
     query: async () => [{ id: 1, url: 'https://www.reddit.com/r/nba/comments/x/game_thread/', lastAccessed: 1 }],
     sendMessage: (id, msg, cb) => cb({
-      ok: true, subreddit: 'nba', filtered: 24, comments: 180, enabled: true,
+      ok: true, subreddit: 'nba', filtered: 24, comments: 180, enabled: true, allowActive: true,
       flairs: [
-        {label:'Lakers',count:14,blocked:true},{label:'Celtics',count:9,blocked:false},
-        {label:'Warriors',count:6,blocked:true},{label:'Knicks',count:4,blocked:true},
-        {label:'Heat',count:3,blocked:false},{label:'[NBA] Adam Silver',count:2,blocked:false}
+        {label:'Lakers',count:14,blocked:true,allowed:false,hiddenByAllowlist:false},
+        {label:'Celtics',count:9,blocked:false,allowed:true,hiddenByAllowlist:false},
+        {label:'Warriors',count:6,blocked:true,allowed:false,hiddenByAllowlist:false},
+        {label:'Knicks',count:4,blocked:true,allowed:false,hiddenByAllowlist:false},
+        {label:'Heat',count:3,blocked:false,allowed:false,hiddenByAllowlist:true},
+        {label:'[NBA] Adam Silver',count:2,blocked:false,allowed:false,hiddenByAllowlist:true}
       ]
     })
   },
