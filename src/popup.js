@@ -390,6 +390,31 @@ $('rescan').addEventListener('click', async () => {
   }, 400);
 });
 
+$('reportBtn').addEventListener('click', async () => {
+  if (targetTabId == null) {
+    $('backupMsg').textContent = 'No reddit tab to report on.';
+    $('backupCard').hidden = false;
+    return;
+  }
+  $('reportBtn').textContent = 'collecting…';
+  const data = await ask(targetTabId, { type: 'subscrub:report' });
+  $('reportBtn').textContent = 'Report';
+  const card = $('backupCard');
+  card.hidden = false;
+  if (!data) {
+    $('backupMsg').textContent = 'The page did not respond — reload the reddit tab and try again.';
+    return;
+  }
+  const text = JSON.stringify(data, null, 2);
+  $('backupText').value = text;
+  try {
+    await navigator.clipboard.writeText(text);
+    $('backupMsg').textContent = 'Debug report copied to clipboard — paste it wherever needed.';
+  } catch (_) {
+    $('backupMsg').textContent = 'Debug report below — select and copy it.';
+  }
+});
+
 $('backupToggle').addEventListener('click', () => {
   const card = $('backupCard');
   card.hidden = !card.hidden;

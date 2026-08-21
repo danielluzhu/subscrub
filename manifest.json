@@ -1,15 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Subscrub",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Filter and auto-collapse Reddit comments by the commenter's user flair.",
-  "permissions": ["storage", "contextMenus"],
-  "host_permissions": ["*://*.reddit.com/*"],
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "*://*.reddit.com/*"
+  ],
   "background": {
     "service_worker": "src/background.js"
   },
   "action": {
-    "default_title": "Subscrub — filter comments by flair",
+    "default_title": "Subscrub \u2014 filter comments by flair",
     "default_popup": "src/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -27,11 +32,28 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.reddit.com/*"],
-      "js": ["src/content.js"],
-      "css": ["src/content.css"],
+      "matches": [
+        "*://*.reddit.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.reddit.com/*"
+      ],
+      "js": [
+        "src/bridge.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "world": "MAIN"
     }
   ]
 }

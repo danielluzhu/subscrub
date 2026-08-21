@@ -139,6 +139,7 @@ everything — no reload needed.
 ```
 manifest.json          MV3 manifest
 src/content.js         comment scanning, flair reading, collapse/hide
+src/bridge.js          main-world console API (__SUBSCRUB__) bridged via postMessage
 src/content.css        stub, badge, and toast styles injected into Reddit
 src/background.js      context-menu item + per-tab badge count
 src/popup.html/.css/.js  popup UI (also the options page)
@@ -180,11 +181,17 @@ those two numbers should always be equal).
 `window.__SUBSCRUB__.rescan()` re-runs filtering from scratch on the page (the
 popup's **Re-scan** link does the same thing).
 
-When something is wrong and you want it diagnosed, one call captures everything:
+When something is wrong and you want it diagnosed, click **Report** in the
+popup footer — it collects a diagnostic snapshot from the page and copies it to
+the clipboard. The same is available from the page console:
 
 ```js
 window.__SUBSCRUB__.report()
 ```
+
+(The console API lives in the page's main world via `src/bridge.js`; the content
+script itself runs in Chrome's isolated world, where it would otherwise be
+invisible to the console.)
 
 It prints (and copies) a JSON snapshot: version, rules, how many comments were
 seen / read for flair / censored / failed to censor, the flairs it found, and up

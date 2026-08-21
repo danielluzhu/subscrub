@@ -964,10 +964,30 @@
     addRule(flair.label.replace(/^:/, ''), currentSub || '*');
   }
 
+  // Answer the main-world bridge (src/bridge.js): the console-facing
+  // __SUBSCRUB__ lives in the page world and reaches us through postMessage.
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data || !e.data.__subscrub) return;
+    const { id, cmd, arg } = e.data.__subscrub;
+    const fns = { report, debug, probe, pageInfo, rescan };
+    let ok = true, data, error = '';
+    try {
+      if (fns[cmd]) data = fns[cmd](arg);
+      else { ok = false; error = 'unknown command: ' + cmd; }
+    } catch (err) { ok = false; error = String(err); }
+    try {
+      window.postMessage({ __subscrubResult: { id, ok, data, error } }, '*');
+    } catch (_) {
+      window.postMessage({ __subscrubResult: { id, ok: false, data: null,
+        error: 'result not serializable' } }, '*');
+    }
+  });
+
   try {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!msg || typeof msg.type !== 'string') return;
       if (msg.type === 'subscrub:pageInfo') { sendResponse(pageInfo()); return; }
+      if (msg.type === 'subscrub:report') { sendResponse(report()); return; }
       if (msg.type === 'subscrub:rescan') { resetAll(); schedule(0); sendResponse({ ok: true }); return; }
       if (msg.type === 'subscrub:contextBlock') { blockFromContext(); sendResponse({ ok: true }); return; }
     });
