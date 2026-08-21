@@ -54,9 +54,14 @@ Open a comments page, then click the Subscrub icon:
   *Block here* creates a filter scoped to the current subreddit; the 🌐 button
   scopes it to all of Reddit. Already-filtered flairs show a `filtered` tag.
 - **Add a filter** — pick `block` or `show only`, then free text plus scope, match
-  mode, and action:
+  mode, and action. After adding, a note says how many comments on the open page
+  the filter matches — or warns when it matches nothing, since the flair's raw
+  text may differ from what's displayed:
   - `contains` (default) — `lakers` matches `Lakers`, `Lakers Fan`, `LAKERS #1`.
-  - `is exactly` — only the whole flair, case-insensitive.
+    Case, whitespace and punctuation are ignored when comparing, so a typed
+    `Arsenal Fan` still matches a flair whose raw text is `:Arsenal_Fan:`.
+  - `is exactly` — only the whole flair; same case/punctuation-insensitive
+    comparison.
   - `regex` — e.g. `^(GSW|Warriors)$`. Invalid patterns are ignored, not thrown.
   - Action `collapse` (fold to a stub) or `hide` (remove entirely).
 - **Blocked flairs / Show only these flairs** — two lists, each row toggleable,

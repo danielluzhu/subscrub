@@ -53,6 +53,9 @@
   /* ------------------------------------------------------------------ utils */
 
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  /* Lowercase with everything but letters and digits removed: ":Arsenal_Fan:"
+     and "arsenal fan" both squash to "arsenalfan". */
+  const squash = (s) => (s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
   const kindOf = (el) => (el.matches('div.thing.comment') ? 'old' : 'shreddit');
 
   function detectSubreddit() {
@@ -275,8 +278,17 @@
       return re ? values.some((v) => re.test(v)) : false;
     }
     const needle = pattern.toLowerCase();
-    if (mode === 'exact') return values.some((v) => v === needle);
-    return values.some((v) => v.includes(needle));
+    if (mode === 'exact') {
+      if (values.some((v) => v === needle)) return true;
+      const sq = squash(needle);
+      return !!sq && values.some((v) => squash(v) === sq);
+    }
+    if (values.some((v) => v.includes(needle))) return true;
+    // Typed patterns rarely match the flair's raw text exactly — reddit renders
+    // "Arsenal Fan" as ":arsenal_fan:" or "arsenal-fan". Compare with case,
+    // whitespace and punctuation stripped so a hand-typed flair still matches.
+    const sq = squash(needle);
+    return !!sq && values.some((v) => squash(v).includes(sq));
   }
 
   function scopeMatches(rule) {

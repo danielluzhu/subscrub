@@ -10,6 +10,19 @@ let targetTabId = null;
 let flairMode = 'block';  // what the buttons in "Flairs on this page" do
 
 const kindOf = (rule) => (rule.kind === 'allow' ? 'allow' : 'block');
+const squash = (s) => (s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+/* Mirror of the content script's matcher, against a flair label. */
+function patternHits(pattern, match, label) {
+  const p = (pattern || '').trim().toLowerCase();
+  const v = (label || '').toLowerCase();
+  if (!p) return false;
+  if (match === 'regex') {
+    try { return new RegExp(pattern, 'i').test(v); } catch (_) { return false; }
+  }
+  if (match === 'exact') return v === p || (squash(p) && squash(v) === squash(p));
+  return v.includes(p) || (squash(p) && squash(v).includes(squash(p)));
+}
 const rulesOf = (kind) => store.rules.filter((r) => kindOf(r) === kind);
 
 /* ------------------------------------------------------------------ storage */
@@ -330,7 +343,28 @@ $('type').addEventListener('change', () => {
 $('addForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $('pattern');
-  addRule(input.value, $('scope').value, $('match').value, $('action').value, $('type').value);
+  const pattern = input.value.trim();
+  const match = $('match').value;
+  addRule(pattern, $('scope').value, match, $('action').value, $('type').value);
+
+  // Tell the user right away when a typed filter matches nothing on the page —
+  // otherwise a near-miss ("Arsenal FC" vs the flair's real text) fails silently.
+  const note = $('addMsg');
+  const flairs = (page && page.flairs) || [];
+  if (pattern && flairs.length && !flairs.some((f) => patternHits(pattern, match, f.label))) {
+    note.hidden = false;
+    note.className = 'note';
+    note.textContent = `“${pattern}” doesn't match any flair seen on this page — ` +
+      'check the list above for the exact text.';
+  } else if (pattern) {
+    const n = flairs.filter((f) => patternHits(pattern, match, f.label))
+      .reduce((sum, f) => sum + f.count, 0);
+    note.hidden = false;
+    note.className = 'note on';
+    note.textContent = n
+      ? `Matches ${n} comment${n === 1 ? '' : 's'} on this page.`
+      : 'Added.';
+  }
   input.value = '';
   input.focus();
 });
