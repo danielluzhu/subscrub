@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Subscrub",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Filter and auto-collapse Reddit comments by the commenter's user flair.",
   "permissions": ["storage", "contextMenus"],
   "host_permissions": ["*://*.reddit.com/*"],

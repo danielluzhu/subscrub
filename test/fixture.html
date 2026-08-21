@@ -213,11 +213,20 @@ window.chrome = {
 
 <script>
 (() => {
+  // Attach shadow roots so these behave like real shreddit components.
+  for (const el of document.querySelectorAll('faceplate-tracker, faceplate-text, shreddit-comment-action-row, mystery-wrapper')) {
+    const root = el.attachShadow({ mode: 'open' });
+    root.innerHTML = '<slot></slot>';
+  }
+})();
+(() => {
   const host = document.getElementById('shadowHost');
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = '<style>.r{border-left:2px solid #eee;padding-left:10px;margin:6px 0}</style>' +
-    '<div class="r"><b>shadow_reply</b> <span class="flair-content">Bulls</span>' +
-    '<p>Reply rendered inside a shadow root — Subscrub must not hide its host.</p></div>';
+    '<div class="r"><shreddit-comment thingid="t1_shadow" author="shadow_reply" depth="1">' +
+    '<div slot="commentMeta"><a href="#">shadow_reply</a><span class="flair-content">Bulls</span></div>' +
+    '<div slot="comment"><p>Reply inside a shadow root — its host must not be hidden.</p></div>' +
+    '</shreddit-comment></div>';
 })();
 </script>
 
@@ -266,6 +275,31 @@ window.chrome = {
     </div>
   </div>
 </div>
+
+
+<h2>shadow-DOM comment parts — the shape the old rules failed on</h2>
+
+<!-- Every part is a custom element with a shadow root, like real shreddit.
+     Old rules spared all of them, so the comment stayed fully visible. -->
+<shreddit-comment thingid="t1_40" author="shadow_gunner" depth="0">
+  <faceplate-tracker slot="commentMeta"><a href="#">shadow_gunner</a>
+    <span class="flair-content">Arsenal</span></faceplate-tracker>
+  <faceplate-text slot="comment"><p>Shadow-part comment — its own parts must be hidden.</p></faceplate-text>
+  <shreddit-comment-action-row>reply · share</shreddit-comment-action-row>
+  <faceplate-partial src="/more-replies">
+    <shreddit-comment thingid="t1_41" author="shadow_reply" depth="1">
+      <faceplate-tracker slot="commentMeta"><a href="#">shadow_reply</a>
+        <span class="flair-content">Spurs</span></faceplate-tracker>
+      <faceplate-text slot="comment"><p>Reply inside a partial — must stay visible.</p></faceplate-text>
+    </shreddit-comment>
+  </faceplate-partial>
+</shreddit-comment>
+
+<!-- Leaf comment whose parts are unrecognisable: fallback should hide them all -->
+<shreddit-comment thingid="t1_42" author="opaque_gunner" depth="0">
+  <mystery-wrapper><span class="flair-content">Arsenal</span>
+    <p>Opaque leaf comment — nothing here holds replies, so hide it all.</p></mystery-wrapper>
+</shreddit-comment>
 
 <script src="/src/content.js"></script>
 <script>

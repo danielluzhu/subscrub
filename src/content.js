@@ -33,6 +33,8 @@
   /* Slots that hold replies or the comment body — never a source of the
      commenter's own flair. */
   const SKIP_SLOTS = new Set(['comment', 'actionRow', 'children', 'commentAvatar']);
+  /* Names reddit uses for the containers that hold (or will hold) replies. */
+  const REPLY_HINT = /children|replies|comment-tree|morechildren|more-comments|thread-line/i;
 
   let state = { enabled: true, rules: [], allowAction: 'collapse', allowKeepUnflaired: false };
   let currentSub = detectSubreddit();
@@ -333,31 +335,77 @@
    * reply holder, so a thread can never disappear because of a guess.
    */
 
-  function holdsReplies(child, kind) {
-    if (child.matches(COMMENT_SEL)) return true;          // a reply itself
-    if (child.querySelector(COMMENT_SEL)) return true;    // wrapper around replies
-    if (child.shadowRoot) return true;                    // can't see inside — assume replies
+  /* Does this subtree hold a comment? Open shadow roots are queryable, so look
+     through them rather than assuming any custom element hides replies. */
+  function containsComment(node) {
+    if (!node || !node.querySelector) return false;
+    if (node.querySelector(COMMENT_SEL)) return true;
+    if (node.shadowRoot && node.shadowRoot.querySelector(COMMENT_SEL)) return true;
+    for (const inner of node.children) {
+      if (inner.shadowRoot && inner.shadowRoot.querySelector(COMMENT_SEL)) return true;
+    }
+    return false;
+  }
+
+  /* Named like something reddit fills with replies later (a lazy partial that
+     is empty right now, so containsComment can't see them yet). */
+  function looksLikeReplyContainer(child, kind) {
     if (kind === 'old') return child.classList.contains('child');
-    const slot = child.getAttribute('slot');
-    if (slot) return slot === 'children';
-    // Unslotted custom element (a lazy "more replies" partial, say): leave it.
-    return child.tagName.includes('-');
+    if (child.getAttribute('slot') === 'children') return true;
+    const tag = child.tagName.toLowerCase();
+    if (tag === 'faceplate-partial') return true;
+    const id = child.getAttribute('id') || '';
+    const cls = child.getAttribute('class') || '';
+    return REPLY_HINT.test(tag) || REPLY_HINT.test(id) || REPLY_HINT.test(cls);
+  }
+
+  function holdsReplies(child, kind) {
+    if (child.matches(COMMENT_SEL)) return true;   // a reply itself
+    if (containsComment(child)) return true;       // wrapper around replies
+    return looksLikeReplyContainer(child, kind);
   }
 
   function censorParts(el, kind) {
     const censoring = el.dataset.subscrubState === 'collapsed' ||
                       el.dataset.subscrubState === 'hidden';
+    let hidden = 0;
+    const parts = [];
+
     for (const child of el.children) {
       if (!child.dataset || child.classList.contains('subscrub-stub')) continue;
+      parts.push(child);
       if (!censoring) {
         delete child.dataset.subscrubPart;
         continue;
       }
       // Already established as a reply holder: it stays visible, no re-check.
       if (child.dataset.subscrubPart === 'kept') continue;
-      if (holdsReplies(child, kind)) child.dataset.subscrubPart = 'kept';
-      else child.dataset.subscrubPart = 'hidden';
+      if (holdsReplies(child, kind)) {
+        child.dataset.subscrubPart = 'kept';
+      } else {
+        child.dataset.subscrubPart = 'hidden';
+        hidden++;
+      }
     }
+
+    if (!censoring) {
+      delete el.dataset.subscrubCensor;
+      return;
+    }
+
+    // Nothing hidden means we failed to recognise any of the comment's own
+    // parts, and the reader sees a stub above a fully visible comment.
+    if (hidden === 0 && parts.length) {
+      if (!containsComment(el)) {
+        // No replies inside, so everything here is this comment's own content.
+        parts.forEach((child) => { child.dataset.subscrubPart = 'hidden'; });
+        el.dataset.subscrubCensor = 'fallback';
+        return;
+      }
+      el.dataset.subscrubCensor = 'failed';   // surfaced by report()/debug()
+      return;
+    }
+    el.dataset.subscrubCensor = 'parts';
   }
 
   function applyDecision(el, kind, decision, flair) {
@@ -485,6 +533,7 @@
     delete el.dataset.subscrubReason;
     delete el.dataset.subscrubFlair;
     delete el.dataset.subscrubRule;
+    delete el.dataset.subscrubCensor;
     if (filtered > 0) filtered--;
   }
 
@@ -548,6 +597,9 @@
 
   function resetAll() {
     document.querySelectorAll('.subscrub-stub').forEach((n) => n.remove());
+    document.querySelectorAll('[data-subscrub-censor]').forEach((el) => {
+      delete el.dataset.subscrubCensor;
+    });
     document.querySelectorAll('[data-subscrub-part]').forEach((el) => {
       delete el.dataset.subscrubPart;
     });
@@ -556,6 +608,7 @@
       delete el.dataset.subscrubFlair;
       delete el.dataset.subscrubRule;
       delete el.dataset.subscrubReason;
+      delete el.dataset.subscrubCensor;
     });
     document.querySelectorAll('[data-subscrub-done], [data-subscrub-seen]').forEach((el) => {
       delete el.dataset.subscrubDone;
@@ -718,6 +771,113 @@
     return html;
   }
 
+  /* ---------------------------------------------------------------- report
+   *
+   * window.__SUBSCRUB__.report() — a paste-ready snapshot of what Subscrub did
+   * on this page and the markup it had to work with. Comment body text is left
+   * out; tag names, attributes and flair text are what matter for diagnosis.
+   */
+  function skeleton(node, depth, maxDepth) {
+    const pad = '  '.repeat(depth);
+    const tag = node.tagName.toLowerCase();
+    const attrs = ['slot', 'id', 'class', 'alt', 'title', 'depth', 'thingid', 'author',
+                   'data-subscrub-part', 'bundlename']
+      .map((a) => {
+        const v = node.getAttribute && node.getAttribute(a);
+        return v ? ' ' + a + '="' + norm(v).slice(0, 70) + '"' : '';
+      }).join('');
+    const shadow = node.shadowRoot ? ' [shadow-root]' : '';
+    const line = pad + '<' + tag + attrs + '>' + shadow;
+
+    const isBody = node.matches && node.matches('[slot="comment"], .usertext, [id*="rtjson"]');
+    if (isBody) return line + ' (body text omitted)';
+
+    const kids = Array.from(node.children || []).slice(0, 10);
+    if (!kids.length || depth >= maxDepth) {
+      const t = norm(node.textContent).slice(0, 50);
+      return line + (t ? ' "' + t + '"' : '');
+    }
+    return line + '\n' + kids.map((k) => skeleton(k, depth + 1, maxDepth)).join('\n');
+  }
+
+  function partNames(el, want) {
+    return Array.from(el.children)
+      .filter((c) => c.dataset && (c.dataset.subscrubPart || '') === want)
+      .map((c) => {
+        const slot = c.getAttribute('slot');
+        const cls = (c.getAttribute('class') || '').split(/\s+/)[0];
+        return c.tagName.toLowerCase() + (slot ? '[slot=' + slot + ']' : '') + (cls ? '.' + cls : '');
+      });
+  }
+
+  function report() {
+    const all = collect(document);
+    const tops = all.filter((el) => isTopLevel(el));
+    const scored = [];
+
+    for (const el of all) {
+      const kind = kindOf(el);
+      const flair = readFlair(el, kind);
+      const top = isTopLevel(el);
+      const verdict = top ? decide(flair ? flair.values : null) : null;
+      const censored = !!el.dataset.subscrubState;
+      // Rank by how much this comment would tell us about a failure.
+      let score = 0;
+      if (el.dataset.subscrubCensor === 'failed') score = 100;
+      else if (verdict && !censored) score = 90;          // should be scrubbed, isn't
+      else if (top && !flair) score = 60;                 // flair not readable
+      else if (censored) score = 40;                      // working example
+      if (score) scored.push({ el, kind, flair, top, verdict, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const samples = scored.slice(0, 4).map((s) => ({
+      author: authorOf(s.el, s.kind) || '?',
+      topLevel: s.top,
+      flairRead: s.flair ? s.flair.label : '(none found)',
+      flairValues: s.flair ? s.flair.values : [],
+      wouldCensor: s.verdict ? s.verdict.reason : 'no',
+      state: s.el.dataset.subscrubState || '-',
+      censorMode: s.el.dataset.subscrubCensor || '-',
+      hiddenParts: partNames(s.el, 'hidden'),
+      keptParts: partNames(s.el, 'kept'),
+      markup: skeleton(s.el, 0, 3)
+    }));
+
+    const out = {
+      subscrub: (chrome.runtime && chrome.runtime.getManifest)
+        ? chrome.runtime.getManifest().version : 'unknown',
+      url: location.href.split('?')[0],
+      subreddit: currentSub,
+      enabled: state.enabled,
+      scans,
+      msSinceScan: lastScanAt ? Date.now() - lastScanAt : null,
+      rules: state.rules.map((r) => ({
+        kind: r.kind || 'block', pattern: r.pattern, match: r.match || 'contains',
+        subreddit: r.subreddit || '*', action: r.action || 'collapse', enabled: r.enabled !== false
+      })),
+      totals: {
+        comments: all.length,
+        topLevel: tops.length,
+        flairRead: all.filter((el) => !!readFlair(el, kindOf(el))).length,
+        censored: document.querySelectorAll('[data-subscrub-state]').length,
+        censorFailed: document.querySelectorAll('[data-subscrub-censor="failed"]').length,
+        censorFallback: document.querySelectorAll('[data-subscrub-censor="fallback"]').length
+      },
+      flairsSeen: Array.from(flairIndex.values())
+        .sort((a, b) => b.count - a.count).slice(0, 15)
+        .map((f) => f.label + ' ×' + f.count),
+      samples
+    };
+
+    const text = JSON.stringify(out, null, 2);
+    console.log('%c[subscrub] copy everything below this line', 'font-weight:bold');
+    console.log(text);
+    try { navigator.clipboard.writeText(text).then(
+      () => console.log('[subscrub] (also copied to clipboard)'), () => {}); } catch (_) {}
+    return out;
+  }
+
   function blockFromContext() {
     const el = lastContextComment;
     if (!el || !el.isConnected) { toast('Right-click directly on a comment to filter its flair'); return; }
@@ -789,7 +949,7 @@
   }
 
   window.__SUBSCRUB__ = {
-    scan, rescan, resetAll, pageInfo, debug, probe,
+    scan, rescan, resetAll, pageInfo, debug, probe, report,
     get state() { return state; }
   };
 })();

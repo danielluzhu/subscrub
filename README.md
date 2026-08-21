@@ -83,11 +83,18 @@ Because a comment element *contains* its replies on both Reddits, censoring is
 done part by part rather than by hiding the comment element. Each direct child
 is classified in JS: the comment's own parts (meta row, body, votes, action row)
 get `data-subscrub-part="hidden"`, and anything that holds replies is left alone
-— a reply element, a wrapper containing one, `.child`, `slot="children"`, an
-unslotted custom element, or a shadow-root host we cannot see into. Anything
-ambiguous counts as a reply holder, so a thread can never disappear because of a
-guess, and every scan re-checks censored comments so replies that load later
-un-hide their container. (Reddit's own collapse isn't used: it takes the reply
+— a reply element, a subtree containing one (**including through open shadow
+roots**, which are queryable), `.child`, `slot="children"`, or an element named
+like a reply container (`faceplate-partial`, `*children*`, `*replies*`).
+
+Crucially, being a custom element or having a shadow root is *not* on its own a
+reason to spare something: reddit builds a comment's own parts out of custom
+elements with shadow roots, so that rule spared everything and left comments
+fully visible under their stub. If a censoring pass ends up hiding nothing, the
+comment falls back to hiding every part when it holds no replies at all, and
+otherwise records `data-subscrub-censor="failed"` so `report()` can surface it
+instead of failing silently. Every scan re-checks censored comments so replies
+that load later un-hide their container. (Reddit's own collapse isn't used: it takes the reply
 tree with it.)
 
 Only top-level comments are judged — a comment with a comment ancestor, or a
@@ -157,6 +164,19 @@ those two numbers should always be equal).
 
 `window.__SUBSCRUB__.rescan()` re-runs filtering from scratch on the page (the
 popup's **Re-scan** link does the same thing).
+
+When something is wrong and you want it diagnosed, one call captures everything:
+
+```js
+window.__SUBSCRUB__.report()
+```
+
+It prints (and copies) a JSON snapshot: version, rules, how many comments were
+seen / read for flair / censored / failed to censor, the flairs it found, and up
+to four sample comments ranked by how much they reveal — each with the flair text
+read, the verdict, which child elements were hidden vs spared, and a markup
+skeleton of the comment (tags and attributes only; comment body text is left
+out). That skeleton is what makes a selector bug fixable without guessing.
 
 When a flair *isn't* being caught, ask what Subscrub sees for it:
 
