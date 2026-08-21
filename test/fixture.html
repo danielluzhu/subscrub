@@ -213,13 +213,6 @@ window.chrome = {
 
 <script>
 (() => {
-  // Attach shadow roots so these behave like real shreddit components.
-  for (const el of document.querySelectorAll('faceplate-tracker, faceplate-text, shreddit-comment-action-row, mystery-wrapper')) {
-    const root = el.attachShadow({ mode: 'open' });
-    root.innerHTML = '<slot></slot>';
-  }
-})();
-(() => {
   const host = document.getElementById('shadowHost');
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = '<style>.r{border-left:2px solid #eee;padding-left:10px;margin:6px 0}</style>' +
@@ -308,6 +301,46 @@ window.chrome = {
   <mystery-wrapper><span class="flair-content">Arsenal</span>
     <p>Opaque leaf comment — nothing here holds replies, so hide it all.</p></mystery-wrapper>
 </shreddit-comment>
+
+
+<h2>invisible-mutation cases — attribute-only flair, shadow-hosted tree</h2>
+
+<!-- Flair arrives as an ATTRIBUTE WRITE on an existing img (no node added, so
+     no childList mutation fires). The sweep must keep scanning until read. -->
+<shreddit-comment thingid="t1_60" author="attr_flair" depth="0">
+  <div slot="commentMeta"><a href="#">attr_flair</a>
+    <img id="attrFlairImg" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=""><span>· 1h</span></div>
+  <div slot="comment" id="t1_60-comment-rtjson-content"><p>Flair alt is set 2.5s later, attribute-only.</p></div>
+</shreddit-comment>
+
+<!-- A whole comment batch hydrated inside an open shadow root -->
+<deep-thread id="deepThread"></deep-thread>
+<script>
+(() => {
+  // Attach shadow roots so these behave like real shreddit components.
+  for (const el of document.querySelectorAll('faceplate-tracker, faceplate-text, shreddit-comment-action-row, mystery-wrapper')) {
+    const root = el.attachShadow({ mode: 'open' });
+    root.innerHTML = '<slot></slot>';
+  }
+})();
+(() => {
+  // Comment batch living entirely inside an open shadow root.
+  const root = document.getElementById('deepThread').attachShadow({ mode: 'open' });
+  root.innerHTML =
+    '<shreddit-comment thingid="t1_61" author="shadow_tree_gunner" depth="0">' +
+    '<div slot="commentMeta"><a href="#">shadow_tree_gunner</a><span class="flair-content">Arsenal</span></div>' +
+    '<div slot="comment"><p>Top-level comment inside a shadow-rooted tree.</p></div>' +
+    '<shreddit-comment thingid="t1_62" author="shadow_tree_reply" depth="1">' +
+    '<div slot="commentMeta"><a href="#">shadow_tree_reply</a><span class="flair-content">Arsenal</span></div>' +
+    '<div slot="comment"><p>Reply in the shadow tree — never scrubbed.</p></div>' +
+    '</shreddit-comment>' +
+    '</shreddit-comment>';
+  // attribute-only flair write, well after the grace period
+  setTimeout(() => {
+    document.getElementById('attrFlairImg').setAttribute('alt', ':Arsenal:');
+  }, 2500);
+})();
+</script>
 
 <script src="/src/content.js"></script>
 <script>

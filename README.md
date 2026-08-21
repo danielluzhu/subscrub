@@ -118,7 +118,17 @@ the parent censored for a flair it never had.
 A `MutationObserver` handles infinite scroll and *load more comments*, with
 earliest-wins scan scheduling so a newly loaded batch is never left waiting
 behind a longer pending timer, and a 700ms sweep that rescans whenever the
-comment count changes without a mutation we acted on. Comment elements are keyed
+comment count changes without a mutation we acted on — or, throttled to every
+~2.5s, while any comment still shows no flair, because reddit fills flair in
+with attribute writes and shadow renders that fire no mutation we can observe.
+An unflaired comment is re-read indefinitely (not just for a fixed window):
+flair often renders only when the comment scrolls into view.
+
+Comment discovery, state cleanup, and re-checks all query **through open shadow
+roots**, so a comment batch hydrated inside a shadow-rooted container is found,
+scrubbed, and un-scrubbed like any other. Since page stylesheets don't reach
+inside shadow roots, the censoring styles are adopted into any root that holds
+a censored comment (via `adoptedStyleSheets`, with a `<style>` fallback). Comment elements are keyed
 by `thingid`, so an element Reddit recycles for a different comment while you
 scroll is re-judged instead of keeping the previous verdict; a comment whose flair hasn't rendered yet is retried for a
 few passes before being written off as flairless. Removing a filter fully undoes

@@ -19,9 +19,6 @@
      genuinely unflaired. Matters for the allowlist, which has to decide about
      comments that never show a flair at all. */
   const FLAIR_GRACE_MS = 1500;
-  /* How long after first sight to keep re-reading a comment that looked
-     unflaired, in case reddit renders its flair late. */
-  const RECHECK_WINDOW_MS = 30000;
   const COMMENT_SEL = 'shreddit-comment, div.thing.comment';
   const FLAIR_QUERY = [
     '[class*="flair" i]',
@@ -35,6 +32,47 @@
   const SKIP_SLOTS = new Set(['comment', 'actionRow', 'children', 'commentAvatar']);
   /* Names reddit uses for the containers that hold (or will hold) replies. */
   const REPLY_HINT = /children|replies|comment-tree|morechildren|more-comments|thread-line/i;
+
+  /* Page stylesheets never apply inside shadow roots, so a censored comment
+     living in one needs these rules adopted into its root or nothing visibly
+     happens. Mirrors the essential parts of content.css. */
+  const SHADOW_CSS = [
+    '[data-subscrub-part="hidden"]{display:none!important}',
+    '[data-subscrub-state="hidden"]>*:not(.subscrub-stub){display:none!important}',
+    'shreddit-comment[data-subscrub-state]{display:block}',
+    '.subscrub-stub{display:inline-flex;align-items:center;gap:8px;max-width:100%;',
+    'margin:4px 0 6px;padding:5px 10px;border:1px dashed rgba(128,128,128,.45);',
+    'border-radius:8px;background:rgba(128,128,128,.08);color:inherit;cursor:pointer;',
+    'font:500 12px/1.35 system-ui,sans-serif;opacity:.82;user-select:none}',
+    '.subscrub-stub:hover{opacity:1;border-color:rgba(255,69,0,.7)}',
+    '.subscrub-caret{width:13px;text-align:center;font-weight:700;color:#ff4500}',
+    '.subscrub-who{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:14ch}',
+    '.subscrub-chip{padding:1px 7px;border-radius:999px;background:rgba(255,69,0,.16);',
+    'color:#d93a00;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22ch}',
+    '.subscrub-hint{opacity:.65;font-size:11px;white-space:nowrap}'
+  ].join('');
+
+  let shadowSheet = null;
+  function ensureShadowStyles(el) {
+    const root = el.getRootNode && el.getRootNode();
+    if (!root || !root.host) return; // light DOM: content.css already applies
+    try {
+      if (!shadowSheet) {
+        shadowSheet = new CSSStyleSheet();
+        shadowSheet.replaceSync(SHADOW_CSS);
+      }
+      if (!root.adoptedStyleSheets.includes(shadowSheet)) {
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, shadowSheet];
+      }
+    } catch (_) {
+      if (!root.querySelector('style[data-subscrub]')) {
+        const st = document.createElement('style');
+        st.setAttribute('data-subscrub', '');
+        st.textContent = SHADOW_CSS;
+        root.appendChild(st);
+      }
+    }
+  }
 
   let state = { enabled: true, rules: [], allowAction: 'collapse', allowKeepUnflaired: false };
   let currentSub = detectSubreddit();
@@ -121,14 +159,36 @@
 
   /* ------------------------------------------------------- comment discovery */
 
-  function collect(root) {
-    const out = [];
-    if (!root || (root.nodeType !== 1 && root.nodeType !== 9)) return out;
-    if (root.nodeType === 1 && root.matches && root.matches(COMMENT_SEL)) {
-      out.push(root);
+  /* Open shadow roots are queryable but document.querySelectorAll never looks
+     inside them — and reddit hydrates whole comment batches into shadow-rooted
+     containers. Walk every open root so those comments exist for us at all.
+     Memoized briefly: several deep queries run per scan. */
+  let rootsCache = null;
+  let rootsCacheAt = 0;
+  function openShadowRoots() {
+    if (rootsCache && Date.now() - rootsCacheAt < 100) return rootsCache;
+    const roots = [];
+    const walk = (r) => {
+      r.querySelectorAll('*').forEach((el) => {
+        if (el.shadowRoot) { roots.push(el.shadowRoot); walk(el.shadowRoot); }
+      });
+    };
+    walk(document);
+    rootsCache = roots;
+    rootsCacheAt = Date.now();
+    return roots;
+  }
+
+  function deepQuery(sel) {
+    const out = Array.from(document.querySelectorAll(sel));
+    for (const root of openShadowRoots()) {
+      root.querySelectorAll(sel).forEach((el) => out.push(el));
     }
-    root.querySelectorAll(COMMENT_SEL).forEach((el) => out.push(el));
     return out;
+  }
+
+  function collect() {
+    return deepQuery(COMMENT_SEL);
   }
 
   /* ------------------------------------------------------------ flair reading */
@@ -165,9 +225,16 @@
 
   /* Replies are never censored — only top-level comments are. Handles both a
      nested comment tree and a flat one where depth is an attribute. */
+  function upOne(node) {
+    if (node.parentElement) return node.parentElement;
+    const root = node.getRootNode && node.getRootNode();
+    return (root && root.host) ? root.host : null; // step out of a shadow root
+  }
+
   function isTopLevel(el) {
-    const parent = el.parentElement && el.parentElement.closest(COMMENT_SEL);
-    if (parent) return false;
+    for (let node = upOne(el); node; node = upOne(node)) {
+      if (node.matches && node.matches(COMMENT_SEL)) return false;
+    }
     const depth = el.getAttribute && el.getAttribute('depth');
     if (depth !== null && depth !== undefined && depth !== '' && Number(depth) > 0) return false;
     return true;
@@ -422,6 +489,7 @@
 
   function applyDecision(el, kind, decision, flair) {
     if (el.dataset.subscrubUser === 'expanded') return;
+    ensureShadowStyles(el);
     filtered++;
     el.dataset.subscrubFlair = flair ? flair.label : '(no flair)';
     el.dataset.subscrubReason = decision.reason;
@@ -552,11 +620,9 @@
   /* A comment we read as unflaired may just have been slow. Reddit lazy-loads
      flair, so keep re-reading these for a while instead of writing them off. */
   function recheckUnflaired(el) {
-    const seen = Number(el.dataset.subscrubSeen || 0);
-    if (seen && Date.now() - seen > RECHECK_WINDOW_MS) {
-      delete el.dataset.subscrubNoflair;
-      return;
-    }
+    // No time cap: reddit renders flair whenever a comment scrolls into view,
+    // which can be minutes after we first saw it. Re-reading is cheap and the
+    // set of unflaired comments is bounded by the page.
     const kind = kindOf(el);
     const flair = readFlair(el, kind);
     if (!flair) return;
@@ -572,17 +638,17 @@
     scanTimer = null;
     scanDue = 0;
     if (!alive()) return;
-    const list = collect(document);
+    const list = collect();
     seenComments = list.length;
     for (const el of list) {
       try { processComment(el, kindOf(el)); } catch (_) { /* keep scanning */ }
     }
-    document.querySelectorAll('[data-subscrub-noflair]').forEach((el) => {
+    deepQuery('[data-subscrub-noflair]').forEach((el) => {
       try { recheckUnflaired(el); } catch (_) { /* keep going */ }
     });
     // Re-check censored comments: replies (and the controls that load them) can
     // arrive after we censored, and they must never stay hidden.
-    document.querySelectorAll('[data-subscrub-state]').forEach((el) => {
+    deepQuery('[data-subscrub-state]').forEach((el) => {
       try {
         if (!isTopLevel(el)) uncensor(el);   // reparented under another comment
         else censorParts(el, kindOf(el));
@@ -608,21 +674,21 @@
   }
 
   function resetAll() {
-    document.querySelectorAll('.subscrub-stub').forEach((n) => n.remove());
-    document.querySelectorAll('[data-subscrub-censor]').forEach((el) => {
+    deepQuery('.subscrub-stub').forEach((n) => n.remove());
+    deepQuery('[data-subscrub-censor]').forEach((el) => {
       delete el.dataset.subscrubCensor;
     });
-    document.querySelectorAll('[data-subscrub-part]').forEach((el) => {
+    deepQuery('[data-subscrub-part]').forEach((el) => {
       delete el.dataset.subscrubPart;
     });
-    document.querySelectorAll('[data-subscrub-state]').forEach((el) => {
+    deepQuery('[data-subscrub-state]').forEach((el) => {
       delete el.dataset.subscrubState;
       delete el.dataset.subscrubFlair;
       delete el.dataset.subscrubRule;
       delete el.dataset.subscrubReason;
       delete el.dataset.subscrubCensor;
     });
-    document.querySelectorAll('[data-subscrub-done], [data-subscrub-seen]').forEach((el) => {
+    deepQuery('[data-subscrub-done], [data-subscrub-seen]').forEach((el) => {
       delete el.dataset.subscrubDone;
       delete el.dataset.subscrubSeen;
       delete el.dataset.subscrubNoflair;
@@ -703,7 +769,7 @@
       scans, ((Date.now() - lastScanAt) / 1000).toFixed(1), seenComments, filtered,
       state.enabled, state.rules.length);
     const rows = [];
-    document.querySelectorAll('[data-subscrub-state]').forEach((el) => {
+    deepQuery('[data-subscrub-state]').forEach((el) => {
       const kind = kindOf(el);
       const children = Array.from(el.children);
       rows.push({
@@ -737,7 +803,7 @@
     const rows = [];
     let matched = 0;
 
-    for (const el of collect(document)) {
+    for (const el of collect()) {
       const kind = kindOf(el);
       const header = kind === 'old'
         ? el.querySelector(':scope > .entry .tagline')
@@ -823,7 +889,7 @@
   }
 
   function report() {
-    const all = collect(document);
+    const all = collect();
     const tops = all.filter((el) => isTopLevel(el));
     const scored = [];
 
@@ -872,9 +938,9 @@
         comments: all.length,
         topLevel: tops.length,
         flairRead: all.filter((el) => !!readFlair(el, kindOf(el))).length,
-        censored: document.querySelectorAll('[data-subscrub-state]').length,
-        censorFailed: document.querySelectorAll('[data-subscrub-censor="failed"]').length,
-        censorFallback: document.querySelectorAll('[data-subscrub-censor="fallback"]').length
+        censored: deepQuery('[data-subscrub-state]').length,
+        censorFailed: deepQuery('[data-subscrub-censor="failed"]').length,
+        censorFallback: deepQuery('[data-subscrub-censor="fallback"]').length
       },
       flairsSeen: Array.from(flairIndex.values())
         .sort((a, b) => b.count - a.count).slice(0, 15)
@@ -938,6 +1004,7 @@
   /* Reddit is a SPA: watch for navigations so subreddit scope stays correct.
      The same tick is a backstop for comments that appear without a mutation we
      acted on — "load more comments", infinite scroll, a recycled viewport. */
+  let sweepTick = 0;
   setInterval(() => {
     if (location.href !== lastHref) {
       lastHref = location.href;
@@ -946,7 +1013,23 @@
       schedule(250);
       return;
     }
-    if (document.querySelectorAll(COMMENT_SEL).length !== seenComments) schedule(0);
+    // While any comment still shows no flair, keep scanning: reddit fills flair
+    // in with attribute writes and shadow renders that fire no mutation we
+    // watch. Throttled — most pages always have some unflaired comments, and
+    // this must not become a permanent 700ms full-page rescan.
+    if (Date.now() - lastScanAt > 2500 &&
+        (document.querySelector('[data-subscrub-noflair]') ||
+         openShadowRoots().some((r) => r.querySelector('[data-subscrub-noflair]')))) {
+      schedule(0);
+      return;
+    }
+    // Cheap shallow count most ticks; a deep count (through shadow roots) every
+    // fourth, since shadow-hydrated batches don't change the shallow count.
+    sweepTick++;
+    const count = (sweepTick % 4 === 0)
+      ? collect().length
+      : document.querySelectorAll(COMMENT_SEL).length;
+    if (count !== seenComments && (sweepTick % 4 === 0 || count > seenComments)) schedule(0);
   }, 700);
 
   loadState().then(() => {
