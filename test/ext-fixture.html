@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Subscrub fixture</title>
+<script>
+/* Pretend we are on a comments page for subreddit detection. */
+history.replaceState({}, '', '/r/nba/comments/abc123/game_thread/');
+</script>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; padding: 20px 24px 60px; background: #fff; color: #1a1a1b; }
+  h2 { margin: 28px 0 10px; font-size: 15px; }
+  .panel { position: sticky; top: 0; background: #fffbe9; border: 1px solid #e6d9a8; padding: 8px 12px; border-radius: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .panel button { font: inherit; padding: 4px 9px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  #out { font: 12px ui-monospace, monospace; color: #444; }
+
+  /* Rough stand-in for old reddit's own stylesheet */
+  .thing.comment { border-left: 2px solid #eee; padding: 6px 0 6px 10px; margin: 6px 0; }
+  .thing.comment .tagline { color: #888; font-size: 12px; }
+  .thing.comment .flair { background: #ddd; border-radius: 3px; padding: 0 4px; font-size: 11px; }
+  .thing.comment .child { margin-left: 14px; }
+
+  /* Rough stand-in for new reddit layout */
+  shreddit-comment { display: block; border-left: 2px solid #eee; padding: 6px 0 6px 10px; margin: 8px 0; }
+  [slot="commentMeta"] { font-size: 12px; color: #666; display: flex; gap: 6px; align-items: center; }
+  .reply-wrap, faceplate-partial { display: block; margin-left: 14px; }
+  .flair-content { background: #e4e8ea; border-radius: 10px; padding: 0 7px; font-size: 11px; }
+  [slot="comment"] { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<div class="panel"><strong>extension fixture</strong> <span id="out"></span></div>
+
+<h2>old.reddit.com markup</h2>
+
+<div class="thing id-t1_1 comment noncollapsed">
+  <div class="entry">
+    <p class="tagline"><a class="author" href="#">celtics_fan</a>
+      <span class="flair flair-celtics" title="Celtics">Celtics</span></p>
+    <form class="usertext"><div class="md"><p>Old reddit: no flair filter matches, stays open.</p></div></form>
+    <ul class="buttons"><li><a class="expand" href="#">[-]</a></li></ul>
+  </div>
+  <div class="child"></div>
+</div>
+
+<div class="thing id-t1_2 comment noncollapsed">
+  <div class="entry">
+    <p class="tagline"><a class="author" href="#">lebron_stan</a>
+      <span class="flair flair-lakers" title="Lakers">Lakers</span></p>
+    <form class="usertext"><div class="md"><p>Old reddit: LAKERS flair — should be collapsed with a badge.</p></div></form>
+    <ul class="buttons"><li><a class="expand" href="#">[-]</a></li></ul>
+  </div>
+  <div class="child">
+    <div class="thing id-t1_3 comment noncollapsed">
+      <div class="entry">
+        <p class="tagline"><a class="author" href="#">nested_guy</a>
+          <span class="flair flair-heat" title="Heat">Heat</span></p>
+        <form class="usertext"><div class="md"><p>Old reddit: reply to a scrubbed comment — stays fully visible.</p></div></form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="thing id-t1_4 comment noncollapsed">
+  <div class="entry">
+    <p class="tagline"><a class="author" href="#">emoji_only</a>
+      <span class="flair flair-lakers"></span></p>
+    <form class="usertext"><div class="md"><p>Old reddit: emoji-only flair, matched via its flair-lakers class.</p></div></form>
+  </div>
+</div>
+
+<h2>new reddit (shreddit) markup</h2>
+
+<shreddit-comment thingid="t1_10" author="warriors_guy" depth="0">
+  <div slot="commentMeta"><a href="#">warriors_guy</a>
+    <span class="flair-content">Warriors</span><span>· 3h</span></div>
+  <div slot="comment" id="t1_10-comment-rtjson-content"><p>Shreddit: Warriors flair, open until you add that filter.</p></div>
+  <div slot="actionRow">reply · share</div>
+</shreddit-comment>
+
+<shreddit-comment thingid="t1_11" author="knicks_in_6" depth="0">
+  <div slot="commentMeta"><a href="#">knicks_in_6</a>
+    <span class="flair-content">Knicks</span><span>· 2h</span></div>
+  <div slot="comment" id="t1_11-comment-rtjson-content"><p>Shreddit: KNICKS flair — collapsed by the all-subreddits filter.</p></div>
+  <div slot="actionRow">reply · share</div>
+  <shreddit-comment thingid="t1_12" author="deep_reply" depth="1">
+    <div slot="commentMeta"><a href="#">deep_reply</a>
+      <span class="flair-content">Nets</span></div>
+    <div slot="comment" id="t1_12-comment-rtjson-content"><p>Shreddit: reply to a scrubbed comment — stays fully visible.</p></div>
+  </shreddit-comment>
+</shreddit-comment>
+
+<shreddit-comment thingid="t1_13" author="lakeshow" depth="0">
+  <div slot="commentMeta"><a href="#">lakeshow</a>
+    <span class="flair-content"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Lakers"> LAL</span></div>
+  <div slot="comment" id="t1_13-comment-rtjson-content"><p>Shreddit: image flair whose alt text is "Lakers" — collapsed.</p></div>
+</shreddit-comment>
+
+<shreddit-comment thingid="t1_14" author="no_flair_guy" depth="0">
+  <div slot="commentMeta"><a href="#">no_flair_guy</a><span>· 5h</span></div>
+  <div slot="comment" id="t1_14-comment-rtjson-content"><p>Shreddit: no flair at all, untouched.</p></div>
+</shreddit-comment>
+
+<shreddit-comment thingid="t1_15" author="spammer" depth="0">
+  <div slot="commentMeta"><a href="#">spammer</a>
+    <span class="flair-content">Spam Merchant</span></div>
+  <div slot="comment" id="t1_15-comment-rtjson-content"><p>Shreddit: hide action — this comment vanishes, its reply below does not.</p></div>
+  <shreddit-comment thingid="t1_16" author="reply_to_spam" depth="1">
+    <div slot="commentMeta"><a href="#">reply_to_spam</a>
+      <span class="flair-content">Bucks</span></div>
+    <div slot="comment" id="t1_16-comment-rtjson-content"><p>Reply under a hidden comment — still readable.</p></div>
+  </shreddit-comment>
+</shreddit-comment>
+
+
+<h2>hard mode — markup shapes we can't see on live reddit</h2>
+
+<!-- Renamed meta slot forces the fallback flair scan. The PARENT's flair (Suns)
+     is not targeted; its REPLY's flair (Lakers) is. Only the reply may scrub. -->
+<shreddit-comment thingid="t1_20" author="suns_fan" depth="0">
+  <div slot="commentHeader"><a href="#">suns_fan</a>
+    <span class="flair-content">Suns</span></div>
+  <div slot="comment" id="t1_20-comment-rtjson-content"><p>Parent is Suns-flaired — must stay fully readable.</p></div>
+  <div class="reply-wrap">
+    <shreddit-comment thingid="t1_21" author="laker_reply" depth="1">
+      <div slot="commentHeader"><a href="#">laker_reply</a>
+        <span class="flair-content">Lakers</span></div>
+      <div slot="comment" id="t1_21-comment-rtjson-content"><p>Reply is Lakers-flaired — this one gets scrubbed.</p></div>
+    </shreddit-comment>
+  </div>
+</shreddit-comment>
+
+<!-- Replies inside an unslotted custom element -->
+<shreddit-comment thingid="t1_22" author="lakers_parent" depth="0">
+  <div slot="commentMeta"><a href="#">lakers_parent</a>
+    <span class="flair-content">Lakers</span></div>
+  <div slot="comment" id="t1_22-comment-rtjson-content"><p>Scrubbed parent, replies live in a faceplate-partial.</p></div>
+  <faceplate-partial src="#">
+    <shreddit-comment thingid="t1_23" author="celtics_reply" depth="1">
+      <div slot="commentMeta"><a href="#">celtics_reply</a>
+        <span class="flair-content">Celtics</span></div>
+      <div slot="comment" id="t1_23-comment-rtjson-content"><p>Reply inside a custom element — stays visible.</p></div>
+    </shreddit-comment>
+  </faceplate-partial>
+</shreddit-comment>
+
+<!-- Replies behind a shadow root we cannot query, plus a lazily filled container -->
+<shreddit-comment thingid="t1_24" author="lakers_shadow" depth="0">
+  <div slot="commentMeta"><a href="#">lakers_shadow</a>
+    <span class="flair-content">Lakers</span></div>
+  <div slot="comment" id="t1_24-comment-rtjson-content"><p>Scrubbed parent with a shadow-DOM reply host and a lazy container.</p></div>
+  <div id="shadowHost"></div>
+  <div id="lazyReplies"></div>
+</shreddit-comment>
+
+<script>
+(() => {
+  const host = document.getElementById('shadowHost');
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = '<style>.r{border-left:2px solid #eee;padding-left:10px;margin:6px 0}</style>' +
+    '<div class="r"><shreddit-comment thingid="t1_shadow" author="shadow_reply" depth="1">' +
+    '<div slot="commentMeta"><a href="#">shadow_reply</a><span class="flair-content">Bulls</span></div>' +
+    '<div slot="comment"><p>Reply inside a shadow root — its host must not be hidden.</p></div>' +
+    '</shreddit-comment></div>';
+})();
+</script>
+
+<h2>r/soccer shapes — crest flairs, late flair, replies</h2>
+
+<!-- Emoji/crest flair: an image with alt text, no "flair" in any attribute -->
+<shreddit-comment thingid="t1_30" author="gunner_1886" depth="0">
+  <div slot="commentMeta"><a href="#">gunner_1886</a>
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=":Arsenal:"><span>· 2h</span></div>
+  <div slot="comment" id="t1_30-comment-rtjson-content"><p>Crest-only Arsenal flair — must scrub once "arsenal" is filtered.</p></div>
+  <!-- reply with a filtered flair: must NOT be scrubbed, it is not a parent comment -->
+  <shreddit-comment thingid="t1_31" author="reply_gunner" depth="1">
+    <div slot="commentMeta"><a href="#">reply_gunner</a>
+      <span class="flair-content">Arsenal</span></div>
+    <div slot="comment" id="t1_31-comment-rtjson-content"><p>Reply with an Arsenal flair — replies are never scrubbed.</p></div>
+  </shreddit-comment>
+</shreddit-comment>
+
+<!-- Avatar image in the meta row must not be mistaken for flair -->
+<shreddit-comment thingid="t1_32" author="avatar_only" depth="0">
+  <div slot="commentMeta"><a href="/user/avatar_only"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="u/avatar_only avatar"></a>
+    <a href="#">avatar_only</a><span>· 1h</span></div>
+  <div slot="comment" id="t1_32-comment-rtjson-content"><p>No flair, just an avatar — Subscrub must read this as unflaired.</p></div>
+</shreddit-comment>
+
+<!-- Flair that renders long after the grace period -->
+<shreddit-comment thingid="t1_33" author="slow_flair" depth="0">
+  <div slot="commentMeta"><a href="#">slow_flair</a><span>· 4h</span></div>
+  <div slot="comment" id="t1_33-comment-rtjson-content"><p>Flair arrives 3s late — must still get scrubbed.</p></div>
+</shreddit-comment>
+
+<!-- Old reddit: reply carrying a filtered flair stays untouched -->
+<div class="thing id-t1_34 comment noncollapsed">
+  <div class="entry">
+    <p class="tagline"><a class="author" href="#">spurs_top</a>
+      <span class="flair flair-spurs" title="Spurs">Spurs</span></p>
+    <form class="usertext"><div class="md"><p>Old reddit top-level, Spurs flair.</p></div></form>
+  </div>
+  <div class="child">
+    <div class="thing id-t1_35 comment noncollapsed">
+      <div class="entry">
+        <p class="tagline"><a class="author" href="#">arsenal_reply</a>
+          <span class="flair flair-arsenal" title="Arsenal">Arsenal</span></p>
+        <form class="usertext"><div class="md"><p>Old reddit reply with a filtered flair — stays untouched.</p></div></form>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Flair whose raw text is ":Arsenal_Fan:" — a hand-typed "Arsenal Fan"
+     must still match it (separator-insensitive matching). -->
+<shreddit-comment thingid="t1_50" author="typed_target" depth="0">
+  <div slot="commentMeta"><a href="#">typed_target</a>
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=":Arsenal_Fan:"></div>
+  <div slot="comment" id="t1_50-comment-rtjson-content"><p>Underscore-and-colon flair.</p></div>
+</shreddit-comment>
+
+<h2>shadow-DOM comment parts — the shape the old rules failed on</h2>
+
+<!-- Every part is a custom element with a shadow root, like real shreddit.
+     Old rules spared all of them, so the comment stayed fully visible. -->
+<shreddit-comment thingid="t1_40" author="shadow_gunner" depth="0">
+  <faceplate-tracker slot="commentMeta"><a href="#">shadow_gunner</a>
+    <span class="flair-content">Arsenal</span></faceplate-tracker>
+  <faceplate-text slot="comment"><p>Shadow-part comment — its own parts must be hidden.</p></faceplate-text>
+  <shreddit-comment-action-row>reply · share</shreddit-comment-action-row>
+  <faceplate-partial src="/more-replies">
+    <shreddit-comment thingid="t1_41" author="shadow_reply" depth="1">
+      <faceplate-tracker slot="commentMeta"><a href="#">shadow_reply</a>
+        <span class="flair-content">Spurs</span></faceplate-tracker>
+      <faceplate-text slot="comment"><p>Reply inside a partial — must stay visible.</p></faceplate-text>
+    </shreddit-comment>
+  </faceplate-partial>
+</shreddit-comment>
+
+<!-- Leaf comment whose parts are unrecognisable: fallback should hide them all -->
+<shreddit-comment thingid="t1_42" author="opaque_gunner" depth="0">
+  <mystery-wrapper><span class="flair-content">Arsenal</span>
+    <p>Opaque leaf comment — nothing here holds replies, so hide it all.</p></mystery-wrapper>
+</shreddit-comment>
+
+
+
+<h2>real shreddit structure (from live capture 2026-08)</h2>
+
+<!-- Verbatim shape of a live shreddit comment: details/summary wrapper, meta
+     inside summary, flair inside a shadow-rooted badges component, and body,
+     action row, replies container as siblings in a grid. -->
+<shreddit-comment class="relative [contain:style] col-start-2" depth="0" thingid="t1_real1" author="real_gunner">
+  <details open class="relative bg-transparent p-0 m-0">
+    <summary class="pb-0 m-0 list-none">
+      <div class="relative flex justify-center"></div>
+      <div slot="commentMeta" class="flex relative">
+        <span class="author-hovercard-trigger"><a href="/user/real_gunner/">real_gunner</a></span>
+        <span aria-hidden="true">•</span>
+        <time datetime="2026-08-21">1h ago</time>
+        <shreddit-comment-badges thing-id="t1_real1"></shreddit-comment-badges>
+      </div>
+      <div class="absolute start-0"></div>
+    </summary>
+    <div class="grid comment-main">
+      <div class="ssr-thread-line absolute"></div>
+      <div class="relative pointer-events-none"></div>
+      <div class="min-w-0 col-start-2" id="t1_real1-comment-rtjson-content"><p>Real-structure comment body — must hide when Arsenal is blocked.</p></div>
+      <div class="min-w-0 col-start-2">Reply · Share · action row</div>
+      <div id="comment-children" class="col-span-2">
+        <shreddit-comment class="relative col-start-2" depth="1" thingid="t1_real2" author="real_reply">
+          <details open class="relative">
+            <summary class="pb-0 m-0 list-none">
+              <div slot="commentMeta"><a href="/user/real_reply/">real_reply</a>
+                <shreddit-comment-badges thing-id="t1_real2"></shreddit-comment-badges></div>
+            </summary>
+            <div class="grid comment-main">
+              <div class="min-w-0 col-start-2" id="t1_real2-comment-rtjson-content"><p>Reply under the real-structure comment — stays visible.</p></div>
+            </div>
+          </details>
+        </shreddit-comment>
+      </div>
+      <div class="fold-more col-span-2">More replies</div>
+    </div>
+  </details>
+  <faceplate-perfmark></faceplate-perfmark>
+</shreddit-comment>
+
+<h2>invisible-mutation cases — attribute-only flair, shadow-hosted tree</h2>
+
+<!-- Flair arrives as an ATTRIBUTE WRITE on an existing img (no node added, so
+     no childList mutation fires). The sweep must keep scanning until read. -->
+<shreddit-comment thingid="t1_60" author="attr_flair" depth="0">
+  <div slot="commentMeta"><a href="#">attr_flair</a>
+    <img id="attrFlairImg" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=""><span>· 1h</span></div>
+  <div slot="comment" id="t1_60-comment-rtjson-content"><p>Flair alt is set 2.5s later, attribute-only.</p></div>
+</shreddit-comment>
+
+<!-- A whole comment batch hydrated inside an open shadow root -->
+<deep-thread id="deepThread"></deep-thread>
+<script>
+(() => {
+  // Attach shadow roots so these behave like real shreddit components.
+  for (const el of document.querySelectorAll('faceplate-tracker, faceplate-text, shreddit-comment-action-row, mystery-wrapper')) {
+    const root = el.attachShadow({ mode: 'open' });
+    root.innerHTML = '<slot></slot>';
+  }
+})();
+(() => {
+  // CommentBadges renders author flair inside its shadow root when logged in.
+  const b1 = document.querySelector('shreddit-comment-badges[thing-id="t1_real1"]');
+  const r1 = b1.attachShadow({ mode: 'open' });
+  r1.innerHTML = '<span aria-hidden="true">•</span>' +
+    '<community-author-flair><div aria-label="Flair: :Arsenal: gunners" class="flair-content">' +
+    '<faceplate-img class="flair-image" width="16" height="16" alt="emoji:Arsenal:" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></faceplate-img>' +
+    ' gunners</div></community-author-flair>';
+  const b2 = document.querySelector('shreddit-comment-badges[thing-id="t1_real2"]');
+  const r2 = b2.attachShadow({ mode: 'open' });
+  r2.innerHTML = '<community-author-flair><div class="flair-content">' +
+    '<faceplate-img class="flair-image" alt="emoji:Arsenal:" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></faceplate-img>' +
+    '</div></community-author-flair>';
+})();
+(() => {
+  // Comment batch living entirely inside an open shadow root.
+  const root = document.getElementById('deepThread').attachShadow({ mode: 'open' });
+  root.innerHTML =
+    '<shreddit-comment thingid="t1_61" author="shadow_tree_gunner" depth="0">' +
+    '<div slot="commentMeta"><a href="#">shadow_tree_gunner</a><span class="flair-content">Arsenal</span></div>' +
+    '<div slot="comment"><p>Top-level comment inside a shadow-rooted tree.</p></div>' +
+    '<shreddit-comment thingid="t1_62" author="shadow_tree_reply" depth="1">' +
+    '<div slot="commentMeta"><a href="#">shadow_tree_reply</a><span class="flair-content">Arsenal</span></div>' +
+    '<div slot="comment"><p>Reply in the shadow tree — never scrubbed.</p></div>' +
+    '</shreddit-comment>' +
+    '</shreddit-comment>';
+  // attribute-only flair write, well after the grace period
+  setTimeout(() => {
+    document.getElementById('attrFlairImg').setAttribute('alt', ':Arsenal:');
+  }, 2500);
+})();
+</script>
+
+
+</body>
+</html>

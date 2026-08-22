@@ -303,6 +303,48 @@ window.chrome = {
 </shreddit-comment>
 
 
+
+<h2>real shreddit structure (from live capture 2026-08)</h2>
+
+<!-- Verbatim shape of a live shreddit comment: details/summary wrapper, meta
+     inside summary, flair inside a shadow-rooted badges component, and body,
+     action row, replies container as siblings in a grid. -->
+<shreddit-comment class="relative [contain:style] col-start-2" depth="0" thingid="t1_real1" author="real_gunner">
+  <details open class="relative bg-transparent p-0 m-0">
+    <summary class="pb-0 m-0 list-none">
+      <div class="relative flex justify-center"></div>
+      <div slot="commentMeta" class="flex relative">
+        <span class="author-hovercard-trigger"><a href="/user/real_gunner/">real_gunner</a></span>
+        <span aria-hidden="true">•</span>
+        <time datetime="2026-08-21">1h ago</time>
+        <shreddit-comment-badges thing-id="t1_real1"></shreddit-comment-badges>
+      </div>
+      <div class="absolute start-0"></div>
+    </summary>
+    <div class="grid comment-main">
+      <div class="ssr-thread-line absolute"></div>
+      <div class="relative pointer-events-none"></div>
+      <div class="min-w-0 col-start-2" id="t1_real1-comment-rtjson-content"><p>Real-structure comment body — must hide when Arsenal is blocked.</p></div>
+      <div class="min-w-0 col-start-2">Reply · Share · action row</div>
+      <div id="comment-children" class="col-span-2">
+        <shreddit-comment class="relative col-start-2" depth="1" thingid="t1_real2" author="real_reply">
+          <details open class="relative">
+            <summary class="pb-0 m-0 list-none">
+              <div slot="commentMeta"><a href="/user/real_reply/">real_reply</a>
+                <shreddit-comment-badges thing-id="t1_real2"></shreddit-comment-badges></div>
+            </summary>
+            <div class="grid comment-main">
+              <div class="min-w-0 col-start-2" id="t1_real2-comment-rtjson-content"><p>Reply under the real-structure comment — stays visible.</p></div>
+            </div>
+          </details>
+        </shreddit-comment>
+      </div>
+      <div class="fold-more col-span-2">More replies</div>
+    </div>
+  </details>
+  <faceplate-perfmark></faceplate-perfmark>
+</shreddit-comment>
+
 <h2>invisible-mutation cases — attribute-only flair, shadow-hosted tree</h2>
 
 <!-- Flair arrives as an ATTRIBUTE WRITE on an existing img (no node added, so
@@ -322,6 +364,20 @@ window.chrome = {
     const root = el.attachShadow({ mode: 'open' });
     root.innerHTML = '<slot></slot>';
   }
+})();
+(() => {
+  // CommentBadges renders author flair inside its shadow root when logged in.
+  const b1 = document.querySelector('shreddit-comment-badges[thing-id="t1_real1"]');
+  const r1 = b1.attachShadow({ mode: 'open' });
+  r1.innerHTML = '<span aria-hidden="true">•</span>' +
+    '<community-author-flair><div aria-label="Flair: :Arsenal: gunners" class="flair-content">' +
+    '<faceplate-img class="flair-image" width="16" height="16" alt="emoji:Arsenal:" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></faceplate-img>' +
+    ' gunners</div></community-author-flair>';
+  const b2 = document.querySelector('shreddit-comment-badges[thing-id="t1_real2"]');
+  const r2 = b2.attachShadow({ mode: 'open' });
+  r2.innerHTML = '<community-author-flair><div class="flair-content">' +
+    '<faceplate-img class="flair-image" alt="emoji:Arsenal:" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></faceplate-img>' +
+    '</div></community-author-flair>';
 })();
 (() => {
   // Comment batch living entirely inside an open shadow root.

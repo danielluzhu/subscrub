@@ -82,7 +82,15 @@ as blocks.
 | Reddit version | Comment node | Flair source |
 | --- | --- | --- |
 | old.reddit.com | `div.thing.comment` | `.tagline .flair` text + `flair-*` classes |
-| new Reddit | `<shreddit-comment>` | flair nodes inside `[slot="commentMeta"]` |
+| new Reddit | `<shreddit-comment>` | flair in the meta row inside `<details><summary>`, including `<community-author-flair>` rendered inside the shadow root of `<shreddit-comment-badges>` |
+
+New Reddit buries a comment's own parts and its replies container as siblings
+deep inside `<details>`, so censoring walks the comment's own subtree: replies
+are skipped, containers that hold (or are named like they will hold) replies are
+kept and recursed into, and everything else is hidden. Flair text is read from
+element text, `alt`/`aria-label` on descendants (including `<faceplate-img>`),
+and old-reddit `flair-*` classes. Note: logged out, new Reddit renders no
+comment author flair at all — that is Reddit, not the extension.
 
 Because a comment element *contains* its replies on both Reddits, censoring is
 done part by part rather than by hiding the comment element. Each direct child
@@ -148,6 +156,22 @@ tools/make_icons.py    regenerates icons/ (no dependencies)
 tools/make_popup_preview.py  builds test/popup-preview.html
 test/fixture.html      offline mock of both Reddit DOMs
 ```
+
+## Testing
+
+Three layers, increasing in realism:
+
+```bash
+python3 -m http.server 8123    # unit fixture: http://localhost:8123/test/fixture.html
+node tools/e2e/run.mjs         # REAL extension in headless Chromium against test/ext-fixture.html
+node tools/e2e/live.mjs        # REAL extension against live reddit.com (old + new)
+```
+
+`run.mjs` loads the actual unpacked extension (manifest injection, isolated
+world, real chrome.storage, the popup driving a live tab) with www.reddit.com
+mapped to localhost. `live.mjs` opens a busy r/soccer thread on both Reddits,
+blocks the most common flair through the real popup, and verifies comments are
+scrubbed with no replies hidden. First run: `cd tools/e2e && npm install`.
 
 ## Development
 

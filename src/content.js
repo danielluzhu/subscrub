@@ -21,6 +21,7 @@
   const FLAIR_GRACE_MS = 1500;
   const COMMENT_SEL = 'shreddit-comment, div.thing.comment';
   const FLAIR_QUERY = [
+    'community-author-flair',      // shreddit's logged-in comment flair component
     '[class*="flair" i]',
     '[id*="flair" i]',
     '[slot*="flair" i]',
@@ -31,7 +32,7 @@
      commenter's own flair. */
   const SKIP_SLOTS = new Set(['comment', 'actionRow', 'children', 'commentAvatar']);
   /* Names reddit uses for the containers that hold (or will hold) replies. */
-  const REPLY_HINT = /children|replies|comment-tree|morechildren|more-comments|thread-line/i;
+  const REPLY_HINT = /children|replies|comment-tree|morechildren|more-comments|thread-line|fold/i;
 
   /* Page stylesheets never apply inside shadow roots, so a censored comment
      living in one needs these rules adopted into its root or nothing visibly
@@ -201,9 +202,12 @@
     };
     push(node.textContent);
     if (node.querySelectorAll) {
-      node.querySelectorAll('img').forEach((img) => {
-        push(img.getAttribute('alt'));
-        push(img.getAttribute('title'));
+      // faceplate-img and aria-labelled wrappers carry the flair text on
+      // shreddit; plain <img> alone misses them
+      node.querySelectorAll('img, faceplate-img, [alt], [aria-label], [title]').forEach((d) => {
+        push(d.getAttribute('alt'));
+        push(d.getAttribute('title'));
+        push(d.getAttribute('aria-label'));
       });
     }
     if (node.getAttribute) {
@@ -220,7 +224,11 @@
      holds the reply subtree can hand us a reply author's flair, and the parent
      gets censored for a flair it never had. */
   function owns(el, node, kind) {
-    return node.closest(kind === 'old' ? 'div.thing.comment' : 'shreddit-comment') === el;
+    const sel = kind === 'old' ? 'div.thing.comment' : 'shreddit-comment';
+    for (let n = upOne(node); n; n = upOne(n)) {
+      if (n.matches && n.matches(sel)) return n === el;
+    }
+    return false;
   }
 
   /* Replies are never censored — only top-level comments are. Handles both a
@@ -253,43 +261,51 @@
     return Array.from(tagline.querySelectorAll('.flair'));
   }
 
+  /* Real shreddit nests the meta row inside <details><summary>, so it is NOT
+     a direct child of <shreddit-comment>. Query descendants and keep only
+     nodes that belong to THIS comment (owns), never to a nested reply. */
   function shredditFlairNodes(el) {
-    const scopes = [];
-    const meta = el.querySelector(':scope > [slot="commentMeta"]');
-    if (meta) {
-      scopes.push(meta);
-    } else {
-      // Unknown markup: scan the comment's own parts, never a reply container.
-      for (const child of el.children) {
-        if (child.matches(COMMENT_SEL)) continue;
-        if (child.querySelector(COMMENT_SEL)) continue;
-        if (child.classList && child.classList.contains('subscrub-stub')) continue;
-        const slot = child.getAttribute && child.getAttribute('slot');
-        if (slot && SKIP_SLOTS.has(slot)) continue;
-        if (child.id && /rtjson/.test(child.id)) continue;
-        scopes.push(child);
-      }
-    }
     const out = [];
     const consider = (node) => {
       if (out.includes(node)) return;
-      if (out.some((prev) => prev.contains(node))) return; // avoid double-counting nesting
+      if (out.some((prev) => prev.contains(node))) return;
       out.push(node);
     };
+
+    const metas = Array.from(el.querySelectorAll('[slot="commentMeta"]'))
+      .filter((m) => owns(el, m, 'shreddit'));
+    const scopes = metas.length ? metas : [el];
+
+    // Flair components (community-author-flair, comment badges) render inside
+    // shadow roots within the meta row — search those roots too.
+    const roots = [];
     for (const scope of scopes) {
-      if (scope.matches && scope.matches(FLAIR_QUERY)) consider(scope);
-      if (scope.querySelectorAll) scope.querySelectorAll(FLAIR_QUERY).forEach(consider);
+      roots.push(scope);
+      scope.querySelectorAll('*').forEach((node) => {
+        if (node.shadowRoot && owns(el, node, 'shreddit')) roots.push(node.shadowRoot);
+      });
     }
 
-    /* Nothing named "flair"? Subs like r/soccer show the flair as a bare crest
-       image in the meta row, so fall back to its alt text (":Arsenal:"). */
-    if (!out.length) {
-      for (const scope of scopes) {
-        if (!scope.querySelectorAll) continue;
-        scope.querySelectorAll('img[alt]').forEach((img) => {
+    for (const root of roots) {
+      if (root !== el && root.matches && root.matches(FLAIR_QUERY)) consider(root);
+      root.querySelectorAll(FLAIR_QUERY).forEach((node) => {
+        if (owns(el, node, 'shreddit')) consider(node);
+      });
+      // flair components whose tag name says "flair" but with no flair attribute
+      root.querySelectorAll('*').forEach((node) => {
+        if (node.tagName.includes('FLAIR') && owns(el, node, 'shreddit')) consider(node);
+      });
+    }
+
+    /* Nothing named "flair"? Crest-style flair is a bare image in the meta
+       row — use its alt text, excluding avatars. Only within the meta row:
+       scanning the whole comment would pick up body images. */
+    if (!out.length && metas.length) {
+      for (const root of roots) {
+        root.querySelectorAll('img[alt], faceplate-img[alt]').forEach((img) => {
           if (!norm(img.getAttribute('alt'))) return;
           if (isAvatarish(img)) return;
-          consider(img);
+          if (owns(el, img, 'shreddit')) consider(img);
         });
       }
     }
@@ -444,43 +460,53 @@
     return looksLikeReplyContainer(child, kind);
   }
 
-  function censorParts(el, kind) {
+  /* Real shreddit buries the comment's own parts and the replies container as
+     siblings deep inside <details>, so a direct-children partition can't
+     separate them. Walk the comment's own subtree instead: a reply is skipped,
+     a container that (or whose name says it will) holds replies is kept and
+     recursed into, and everything else is this comment's own content. */
+  function censorTree(el, kind) {
     const censoring = el.dataset.subscrubState === 'collapsed' ||
                       el.dataset.subscrubState === 'hidden';
     let hidden = 0;
-    const parts = [];
+    let parts = 0;
 
-    for (const child of el.children) {
-      if (!child.dataset || child.classList.contains('subscrub-stub')) continue;
-      parts.push(child);
-      if (!censoring) {
-        delete child.dataset.subscrubPart;
-        continue;
+    const visit = (node) => {
+      for (const child of node.children) {
+        if (!child.dataset) continue;
+        if (child.matches && child.matches(COMMENT_SEL)) continue;   // a reply's own business
+        if (child.classList.contains('subscrub-stub')) continue;
+
+        if (!censoring) {
+          delete child.dataset.subscrubPart;
+          visit(child);
+          continue;
+        }
+
+        parts++;
+        if (child.dataset.subscrubPart === 'kept') { visit(child); continue; }
+        if (looksLikeReplyContainer(child, kind)) {
+          child.dataset.subscrubPart = 'kept';
+          if (containsComment(child)) visit(child);
+          continue;
+        }
+        if (containsComment(child)) {
+          // holds replies somewhere below: keep it, censor its own parts
+          child.dataset.subscrubPart = 'kept';
+          visit(child);
+        } else {
+          child.dataset.subscrubPart = 'hidden';
+          hidden++;
+        }
       }
-      // Already established as a reply holder: it stays visible, no re-check.
-      if (child.dataset.subscrubPart === 'kept') continue;
-      if (holdsReplies(child, kind)) {
-        child.dataset.subscrubPart = 'kept';
-      } else {
-        child.dataset.subscrubPart = 'hidden';
-        hidden++;
-      }
-    }
+    };
+    visit(el);
 
     if (!censoring) {
       delete el.dataset.subscrubCensor;
       return;
     }
-
-    // Nothing hidden means we failed to recognise any of the comment's own
-    // parts, and the reader sees a stub above a fully visible comment.
-    if (hidden === 0 && parts.length) {
-      if (!containsComment(el)) {
-        // No replies inside, so everything here is this comment's own content.
-        parts.forEach((child) => { child.dataset.subscrubPart = 'hidden'; });
-        el.dataset.subscrubCensor = 'fallback';
-        return;
-      }
+    if (hidden === 0 && parts > 0) {
       el.dataset.subscrubCensor = 'failed';   // surfaced by report()/debug()
       return;
     }
@@ -498,7 +524,7 @@
     if (decision.action !== 'hide' && !el.querySelector(':scope > .subscrub-stub')) {
       el.insertBefore(buildStub(el, kind, flair, decision), el.firstChild);
     }
-    censorParts(el, kind);
+    censorTree(el, kind);
   }
 
   function buildStub(el, kind, flair, decision) {
@@ -538,7 +564,7 @@
       if (collapsed) el.dataset.subscrubUser = 'expanded';
       caret.textContent = collapsed ? '−' : '+';
       hint.textContent = collapsed ? 'hide' : hintText;
-      censorParts(el, kindOf(el));
+      censorTree(el, kindOf(el));
     };
     stub.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggle(); });
     stub.addEventListener('keydown', (e) => {
@@ -606,10 +632,8 @@
     if (!el.dataset.subscrubState) return;
     const stub = el.querySelector(':scope > .subscrub-stub');
     if (stub) stub.remove();
-    for (const child of el.children) {
-      if (child.dataset) delete child.dataset.subscrubPart;
-    }
     delete el.dataset.subscrubState;
+    censorTree(el, kindOf(el));   // not censoring any more: clears deep marks
     delete el.dataset.subscrubReason;
     delete el.dataset.subscrubFlair;
     delete el.dataset.subscrubRule;
@@ -651,7 +675,7 @@
     deepQuery('[data-subscrub-state]').forEach((el) => {
       try {
         if (!isTopLevel(el)) uncensor(el);   // reparented under another comment
-        else censorParts(el, kindOf(el));
+        else censorTree(el, kindOf(el));
       } catch (_) { /* keep going */ }
     });
     scans++;
@@ -771,7 +795,6 @@
     const rows = [];
     deepQuery('[data-subscrub-state]').forEach((el) => {
       const kind = kindOf(el);
-      const children = Array.from(el.children);
       rows.push({
         author: el.getAttribute('author') ||
           norm((el.querySelector(':scope > .entry .tagline a.author') || {}).textContent) || '?',
@@ -780,11 +803,20 @@
         reason: el.dataset.subscrubReason || 'block',
         topLevel: isTopLevel(el),
         kind,
-        hidden: children.filter((c) => c.dataset && c.dataset.subscrubPart === 'hidden').map(describe),
-        spared: children.filter((c) => !c.dataset || c.dataset.subscrubPart !== 'hidden').map(describe),
+        hidden: partNames(el, 'hidden'),
+        spared: partNames(el, 'kept'),
         repliesInside: el.querySelectorAll(COMMENT_SEL).length,
         repliesVisible: Array.from(el.querySelectorAll(COMMENT_SEL))
-          .filter((r) => r.getClientRects().length > 0).length
+          .filter((r) => r.getClientRects().length > 0).length,
+        // replies WE hid: a reply with a subscrub-hidden ancestor inside el.
+        // (repliesVisible can legitimately drop when reddit itself collapses
+        // a low-score subthread — that is not our doing.)
+        repliesHiddenByUs: Array.from(el.querySelectorAll(COMMENT_SEL)).filter((r) => {
+          for (let n = r.parentElement; n && n !== el; n = n.parentElement) {
+            if (n.dataset && n.dataset.subscrubPart === 'hidden') return true;
+          }
+          return false;
+        }).length
       });
     });
     if (rows.length && console.table) console.table(rows.map((r) => ({
@@ -879,8 +911,9 @@
   }
 
   function partNames(el, want) {
-    return Array.from(el.children)
-      .filter((c) => c.dataset && (c.dataset.subscrubPart || '') === want)
+    return Array.from(el.querySelectorAll('[data-subscrub-part="' + want + '"]'))
+      .filter((c) => owns(el, c, kindOf(el)))
+      .slice(0, 8)
       .map((c) => {
         const slot = c.getAttribute('slot');
         const cls = (c.getAttribute('class') || '').split(/\s+/)[0];
