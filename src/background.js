@@ -3,13 +3,18 @@
 const MENU_ID = 'subscrub-block-flair';
 
 function installMenu() {
+  // onInstalled and onStartup can both fire around a browser start, so two
+  // removeAll->create sequences interleave and the second create collides on
+  // the fixed id. The collision is harmless (the menu exists exactly once);
+  // read lastError so it never surfaces as an unchecked error.
   chrome.contextMenus.removeAll(() => {
+    void chrome.runtime.lastError;
     chrome.contextMenus.create({
       id: MENU_ID,
       title: "Subscrub: filter this commenter's flair",
       contexts: ['all'],
       documentUrlPatterns: ['*://*.reddit.com/*']
-    });
+    }, () => void chrome.runtime.lastError);
   });
 }
 

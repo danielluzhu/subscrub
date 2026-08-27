@@ -69,6 +69,19 @@ async function main() {
     // ---- popup on a real extension page drives real storage ----
     const swTarget = await browser.waitForTarget((t) => t.type() === 'service_worker', { timeout: 8000 });
     const extId = new globalThis.URL(swTarget.url()).host;
+
+    // context menu: concurrent installs must neither error nor duplicate
+    const worker = await swTarget.worker();
+    const menuOk = await worker.evaluate(() => new Promise((res) => {
+      installMenu();
+      installMenu();   // the race that produced "duplicate id subscrub-block-flair"
+      setTimeout(() => {
+        chrome.contextMenus.update('subscrub-block-flair', {}, () => {
+          res(!chrome.runtime.lastError);   // update succeeds iff the menu exists
+        });
+      }, 500);
+    })).catch((e) => 'error: ' + e.message);
+    check('context menu survives concurrent installs', menuOk === true, menuOk);
     const popup = await browser.newPage();
     const popupErrors = [];
     popup.on('console', (m) => { if (m.type() === 'error') popupErrors.push(m.text()); });
